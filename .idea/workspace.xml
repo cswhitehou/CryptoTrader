@@ -1,7 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
   <component name="ChangeListManager">
-    <list default="true" id="f7e82d4b-c307-4541-8c5d-d43fecddc6fd" name="Changes" comment="&quot;initial commit&quot;" />
+    <list default="true" id="f7e82d4b-c307-4541-8c5d-d43fecddc6fd" name="Changes" comment="&quot;initial commit&quot;">
+      <change afterPath="$PROJECT_DIR$/15m_test_data.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/1h_test_data.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/5m_test_data.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/TCLM.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backtradertest.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backtradertest2.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/cleandata.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/fetchData.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/fetchlotsofdata.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/loadAPI.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/parseCSV.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/simpleEMAbot.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/CryptoTrader.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/CryptoTrader.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -17,23 +35,143 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 2
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "https://github.com/cswhitehou/CryptoTrader.git",
+    "accountId": "e0ac4435-ff4f-444e-9a2b-9b8d20bb89c6"
+  }
 }]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 2
+}</component>
   <component name="ProjectId" id="2gpuWhSE5FfSjfyUu3twGbpcQUN" />
   <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Python.pandas_test.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "git-widget-placeholder": "master",
-    "settings.editor.selected.configurable": "preferences.lookFeel"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Python.TCLM.executor&quot;: &quot;Run&quot;,
+    &quot;Python.backtradertest.executor&quot;: &quot;Run&quot;,
+    &quot;Python.backtradertest2.executor&quot;: &quot;Run&quot;,
+    &quot;Python.ccxt_examples.executor&quot;: &quot;Run&quot;,
+    &quot;Python.cleandata.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fetchData.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fetchlotsofdata.executor&quot;: &quot;Run&quot;,
+    &quot;Python.loadAPI.executor&quot;: &quot;Run&quot;,
+    &quot;Python.pandas_test.executor&quot;: &quot;Run&quot;,
+    &quot;Python.parseCSV.executor&quot;: &quot;Run&quot;,
+    &quot;Python.test.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.lookFeel&quot;
   }
-}]]></component>
+}</component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\cswhi\PycharmProjects\CryptoTrader\data" />
+    </key>
+  </component>
+  <component name="RunManager" selected="Python.TCLM">
+    <configuration name="TCLM" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="CryptoTrader" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/TCLM.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="backtradertest" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="CryptoTrader" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/backtradertest.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="backtradertest2" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="CryptoTrader" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/backtradertest2.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="tradingViewData" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="CryptoTrader" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="C:\Users\cswhi\PycharmProjects\CryptoTrader\tradingViewData.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python.TCLM" />
+        <item itemvalue="Python.backtradertest" />
+        <item itemvalue="Python.tradingViewData" />
+        <item itemvalue="Python.backtradertest2" />
+      </list>
+    </recent_temporary>
+  </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -58,11 +196,35 @@
       <option name="project" value="LOCAL" />
       <updated>1716407259821</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="&quot;initial commit&quot;">
+      <option name="closed" value="true" />
+      <created>1716407490660</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1716407490660</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="&quot;initial commit&quot;" />
     <option name="LAST_COMMIT_MESSAGE" value="&quot;initial commit&quot;" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/.venv/Lib/site-packages/backtrader/feeds/pandafeed.py</url>
+          <line>234</line>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/.venv/Lib/site-packages/backtrader/feeds/pandafeed.py</url>
+          <line>257</line>
+          <option name="timeStamp" value="2" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
 </project>
