@@ -12,14 +12,14 @@ def find_support_resistance(df, window=4):
     return supports, resistances
 
 # Read the CSV data into a DataFrame
-df = pd.read_csv('matic_usd_5min_data.csv')
-
+df = pd.read_csv('matic_usd_5min_data2.csv')
+df.columns = ['datetime', 'milliseconds', 'open', 'high', 'low', 'close', 'volume', 'adj_close']
 # Drop the 'milliseconds' column if it's not needed
-# df = df.drop(columns=['milliseconds'])
-# df = df.drop(columns=['adj_close'])
-df = df.drop(columns=['RollingHigh'])
-df = df.drop(columns=['Support'])
-df = df.drop(columns=['Resistance'])
+df = df.drop(columns=['milliseconds'])
+df = df.drop(columns=['adj_close'])
+# df = df.drop(columns=['RollingHigh'])
+# df = df.drop(columns=['Support'])
+# df = df.drop(columns=['Resistance'])
 # Ensure the datetime column is correctly parsed as datetime objects
 
 
@@ -28,5 +28,5 @@ df.set_index('datetime', inplace=True)
 
 # Ensure the data types are correct
 # Save the cleaned data to a new CSV file
-df.to_csv('matic_usd_5min_data.csv')
+df.to_csv('matic_usd_5min_data2.csv')
 print(df)
