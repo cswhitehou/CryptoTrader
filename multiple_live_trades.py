@@ -39,7 +39,52 @@ def add_support_resistance(df, supports, resistances):
     for group in resistances:
         df.loc[group[0], 'Resistance'] = 1
     return df
-
+"""def place_orders(prices, sizes, type, symbol):
+    orders = []
+    try:
+        order = exchange.create_limit_order(symbol, side=type, amount=sizes[0], price=prices[0], params={
+        'takeProfit': {
+            'triggerPrice': prices[3],
+            'type': 'limit',
+            'price': prices[3],
+        },
+    })
+        print(f"Limit order placed: {order['id']}")
+        orders.append(order['id'])
+    except ccxt.BaseError as e:
+        print(f"An error occurred: {str(e)}")
+        return None
+    try:
+        order = exchange.create_limit_order(symbol, side=type, amount=sizes[1], price=prices[1], params={
+        'takeProfit': {
+            'triggerPrice': prices[0],
+            'type': 'limit',
+            'price': prices[0],
+        },
+    })
+        print(f"Limit order placed: {order['id']}")
+        orders.append(order['id'])
+    except ccxt.BaseError as e:
+        print(f"An error occurred: {str(e)}")
+        return None
+    try:
+        order = exchange.create_limit_order(symbol, side=type, amount=sizes[2], price=prices[2], params={
+        'stopLoss': {
+            'triggerPrice': prices[4],
+            'type': 'market',
+        },
+        'takeProfit': {
+            'triggerPrice': prices[1],
+            'type': 'limit',
+            'price': prices[1],
+        },
+    })
+        print(f"Limit order placed: {order['id']}")
+        orders.append(order['id'])
+    except ccxt.BaseError as e:
+        print(f"An error occurred: {str(e)}")
+        return None
+    return orders"""
 
 def place_orders(prices, sizes, type, symbol):
     orders = []
@@ -49,21 +94,24 @@ def place_orders(prices, sizes, type, symbol):
         orders.append(order['id'])
     except ccxt.BaseError as e:
         print(f"An error occurred: {str(e)}")
-        return None
+        reset_orders(symbol)
+        return []
     try:
         order = exchange.create_limit_order(symbol, side=type, amount=sizes[1], price=prices[1])
         print(f"Limit order placed: {order['id']}")
         orders.append(order['id'])
     except ccxt.BaseError as e:
         print(f"An error occurred: {str(e)}")
-        return None
+        reset_orders(symbol)
+        return []
     try:
         order = exchange.create_limit_order(symbol, side=type, amount=sizes[2], price=prices[2])
         print(f"Limit order placed: {order['id']}")
         orders.append(order['id'])
     except ccxt.BaseError as e:
         print(f"An error occurred: {str(e)}")
-        return None
+        reset_orders(symbol)
+        return []
     if type == 'buy':
         orders = place_take_profit_order(sizes[0], prices[3], orders, 'sell', symbol)
         orders = place_stop_loss_order(9 * sizes[0], prices[4], orders, 'sell', symbol)
@@ -73,7 +121,7 @@ def place_orders(prices, sizes, type, symbol):
     return orders
 
 
-def check_for_trades(df, df15, df1h, compound, accountSize, risk, type):
+def check_for_trades(df, df15, df1h, compound, accountSize, risk, type, trend):
     EMA_15m = df15['close'].ewm(span=200, adjust=False).mean().iloc[-1]
     EMA_1h = df1h['close'].ewm(span=200, adjust=False).mean().iloc[-1]
     if df['EMA_20'].iloc[-1] > df['EMA_50'].iloc[-1] > df['EMA_200'].iloc[-1]:
@@ -143,7 +191,7 @@ def check_for_trades(df, df15, df1h, compound, accountSize, risk, type):
                                 Limit2_size = 5 * Entry_size
                                 return [EP, L1, L2, TP, SL], [Entry_size, Limit1_size, Limit2_size], 'sell', trend_low
     # print("No trade found")
-    return [], [], type, 0
+    return [], [], type, trend
 
 
 def check_for_new_high(df, type, trend, all_orders, orders):
@@ -151,12 +199,12 @@ def check_for_new_high(df, type, trend, all_orders, orders):
         if all_orders['Entry'] is not None:
             if df.high.iloc[-1] > trend:
                 print("New High")
-                return reset_orders(all_orders, symbol)
+                return reset_orders(symbol)
     if type == 'sell':
         if all_orders['Entry'] is not None:
             if df.low.iloc[-1] < trend:
                 print("New Low")
-                return reset_orders(all_orders, symbol)
+                return reset_orders(symbol)
     return all_orders, orders
 
 
@@ -173,7 +221,8 @@ def place_stop_loss_order(amount, stop_trigger, orders, side, symbol):
         return orders
     except ccxt.BaseError as e:
         print(f"An error occurred: {str(e)}")
-        return None
+        reset_orders(symbol)
+        return []
 
 
 def place_take_profit_order(amount, take_profit_price, orders, side, symbol):
@@ -189,15 +238,15 @@ def place_take_profit_order(amount, take_profit_price, orders, side, symbol):
         return orders
     except ccxt.BaseError as e:
         print(f"An error occurred: {str(e)}")
-        return None
+        reset_orders(symbol)
+        return []
 
 
-def reset_orders(all_orders, symbol):
+def reset_orders(symbol):
     exchange.cancel_all_orders(symbol)
     exchange.cancel_all_orders(symbol=symbol, params={'untriggered': True})
     print("Orders Canceled")
-    for order in all_orders:
-        all_orders[order] = None
+    all_orders = {'Entry': None, 'Limit1': None, 'Limit2': None, 'TakeProfit': None, 'StopLoss': None}
     orders = []
     in_position = False
     return all_orders, orders
@@ -207,9 +256,9 @@ def fetch_historical_data(symbol):
     data = exchange.fetch_ohlcv(symbol=symbol, timeframe='5m', limit=1000)
     data15 = exchange.fetch_ohlcv(symbol=symbol, timeframe='15m', limit=1000)
     data1h = exchange.fetch_ohlcv(symbol=symbol, timeframe='1h', limit=1000)
-    df = pd.DataFrame(data, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
-    df15 = pd.DataFrame(data15, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
-    df1h = pd.DataFrame(data1h, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
+    df = pd.DataFrame(data, columns=['datetime', 'high', 'low', 'open', 'close', 'volume'])
+    df15 = pd.DataFrame(data15, columns=['datetime', 'high', 'low', 'open', 'close', 'volume'])
+    df1h = pd.DataFrame(data1h, columns=['datetime', 'high', 'low', 'open', 'close', 'volume'])
     df['datetime'] = pd.to_datetime(df['datetime'], unit='ms')
     return df, df15, df1h
 
@@ -224,31 +273,36 @@ def add_EMAs(df):
 
 def check_for_entry(orders, all_orders, EP, L1, Entry_size, type, symbol):
     new_orders = orders
-    for id in all_orders.values():
-        if id:
-            total_orders = exchange.fetch_open_orders(symbol)
-            for order in total_orders:
-                if order['status'] == 'closed':
-                    print("Order Closed")
-                    if id == all_orders['Entry']:
-                        in_position = True
-                        print("Entry Reached")
-                        all_orders['Entry'] = None
-                    elif id == all_orders['Limit1']:
-                        exchange.cancel_order(all_orders['TakeProfit'])
-                        new_orders = place_take_profit_order(Entry_size*4, EP, orders, type, symbol)
-                        all_orders['TakeProfit'] = new_orders[-1]
-                        all_orders['Limit1'] = None
-                    elif id == all_orders['Limit2']:
-                        exchange.cancel_order(all_orders['TakeProfit'])
-                        new_orders = place_take_profit_order(Entry_size*9, L1, orders, type, symbol)
-                        all_orders['TakeProfit'] = new_orders[-1]
-                        all_orders['Limit2'] = None
-                    elif id == all_orders['TakeProfit']:
-                        all_orders, new_orders = reset_orders(all_orders, symbol)
-                    elif id == all_orders['StopLoss']:
-                        all_orders, new_orders = reset_orders(all_orders, symbol)
+    closed_orders = exchange.fetch_closed_orders(symbol)
+    for order in closed_orders:
+        if order['status'] == 'closed':
+            order_id = order['id']
+            if order_id == all_orders['Entry']:
+                print("Entry Reached")
+                all_orders['Entry'] = None
+            elif order_id == all_orders['Limit1']:
+                exchange.cancel_order(all_orders['TakeProfit'])
+                new_orders = place_take_profit_order(Entry_size*4, EP, orders, type, symbol)
+                all_orders['TakeProfit'] = new_orders[-1]
+                all_orders['Limit1'] = None
+            elif order_id == all_orders['Limit2']:
+                exchange.cancel_order(all_orders['TakeProfit'])
+                new_orders = place_take_profit_order(Entry_size*9, L1, orders, type, symbol)
+                all_orders['TakeProfit'] = new_orders[-1]
+                all_orders['Limit2'] = None
+            elif order_id == all_orders['TakeProfit']:
+                all_orders, new_orders = reset_orders(symbol)
+            elif order_id == all_orders['StopLoss']:
+                all_orders, new_orders = reset_orders(symbol)
     return all_orders, new_orders
+
+"""def check_for_entry(orders, all_orders, EP, L1, Entry_size, type, symbol):
+    new_orders = orders
+    open_orders = exchange.fetch_open_orders(symbol)
+    position_size = exchange.fetch_positions([symbol])[0]['info']['size']
+    if position_size == 0 and len(open_orders) < 3:
+        all_orders, new_orders = reset_orders(all_orders, symbol)
+    return all_orders, new_orders"""
 
 
 def check_historical_trades(symbol):
@@ -269,14 +323,14 @@ def check_historical_trades(symbol):
         data = add_EMAs(data)
         if len(stored_prices) > 0:
             if type == 'buy':
-                if data.high.iloc[-1] > trend:
+                if data['high'].iloc[-1] > trend:
                     print("New High")
                     stored_prices = []
             if type == 'sell':
-                if data.low.iloc[-1] < trend:
+                if data['low'].iloc[-1] < trend:
                     print("New Low")
                     stored_prices = []
-        prices, sizes, type, trend = check_for_trades(data, data15, data1h, compound, 20, .1, type)
+        prices, sizes, type, trend = check_for_trades(data, data15, data1h, compound, 20, .1, type, trend)
         # print(prices)
         # print(type)
         if len(prices) > 0:
@@ -338,7 +392,8 @@ def trade_completion_check(stored_prices, trade_check, type, df):
                 print("Trade would be completed")
     return stored_prices, trade_check
 
-
+# Error Handling
+# Check if there are orders/positions on startup
 if __name__ == '__main__':
     # Replace with your API keys
     api_key, secret = getKey()
@@ -369,8 +424,9 @@ if __name__ == '__main__':
     trade_check = 0
     starting_trade = 0
     in_position = False
-    # exchange.set_position_mode(hedged=False, symbol=symbol)
-    #exchange.set_leverage(50, symbol, params={'optionType': 'cross'})
+    for symbol in symbols:
+        exchange.set_position_mode(hedged=False, symbol=symbol)
+        exchange.set_leverage(-50, symbol)
     for i in range(len(symbols)):
         symbol = symbols_queue.popleft()
         symbols_queue.append(symbol)
@@ -394,13 +450,13 @@ if __name__ == '__main__':
         bal = exchange.fetch_balance()
         accountSize = bal['info']['data']['account']['accountBalanceRv']
         if dt.time(0, 0) <= current_time < dt.time(9, 0):
-            if len(orders) > 0:
-                reset_orders(all_orders, symbol)
+            if all_orders['Entry'] is not None:
+                reset_orders(symbol)
         if len(orders) > 0 and all_orders['Entry'] is not None:
             all_orders, orders = check_for_new_high(df, type, trend, all_orders, orders)
         if len(orders) < 1 and not in_position:
             print(orders)
-            prices, sizes, type, trend = check_for_trades(df, df15, df1h, compound, 20, .1, type)
+            prices, sizes, type, trend = check_for_trades(df, df15, df1h, compound, 20, .1, type, trend)
         if len(prices) > 0:
             print(prices)
             Entry_size = sizes[0]

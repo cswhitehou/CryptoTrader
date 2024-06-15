@@ -1,7 +1,7 @@
 import pandas as pd
 import backtrader as bt
 
-df = pd.read_csv("1h_test_data.csv", parse_dates=['datetime'])
+df = pd.read_csv("data/1h_test_data.csv", parse_dates=['datetime'])
 
 # Ensure the 'datetime' column is correctly parsed
 df['datetime'] = pd.to_datetime(df['datetime'])

@@ -5,6 +5,8 @@ import numpy as np
 import ccxt
 import backtrader.feeds as btfeeds
 import datetime as dt
+import csv
+from analyze_strat import load_csv_to_list, sort_data_by_last_element, print_sorted_data
 
 
 def fetch_historical_data(symbol, start_date, end_date, exchange='phemex'):
@@ -41,6 +43,16 @@ def find_fair_value_gaps(df):
 
 
 class TCLMax(bt.Strategy):
+    params = (
+        ('ema_check_param', False),
+        ('rolling_period', 48),
+        ('too_steep', 0.04),
+        ('steep_candles', 16),
+        ('min_range', 0.04),
+        ('max_range', 0.1),
+        ('established_low', 52),
+        ('data_name', ''),
+    )
     # __init__ initializes all the variables to be used in the strategy when the strategy is loaded
     def __init__(self):
         # Initialize all the values for the strategy
@@ -51,8 +63,8 @@ class TCLMax(bt.Strategy):
         self.ema15m = bt.ind.EMA(period=600)
         self.ema1hr = bt.ind.EMA(period=2400)
         # Define S/R
-        self.rolling_high = bt.indicators.Highest(self.data.high, period=12*48)
-        self.rolling_low = bt.indicators.Lowest(self.data.low, period=12*48)
+        self.rolling_high = bt.indicators.Highest(self.data.high, period=12*self.params.rolling_period)
+        self.rolling_low = bt.indicators.Lowest(self.data.low, period=12*self.params.rolling_period)
         # High, Low, Range, Fib Levels: 1, 0, 0.618, 1.272, 0.382, 0.17, -0.05
         self.trend_low = 0
         self.trend_high = 0
@@ -83,13 +95,18 @@ class TCLMax(bt.Strategy):
         self.risk = 0.35
         self.compound = 1
         self.too_steep = 0
+        self.total_trades = 0
+        self.winning_trades = 0
+        self.L1_hit = 0
+        self.L2_hit = 0
+        self.SL_hit = 0
     # notify_trade is called whenever changes are made to the trade
     def notify_trade(self, trade):
         # check if the trade has been closed and print results
         if trade.isclosed:
-            print(f"TRADE closed, Profit: {trade.pnl}, Net Profit: {trade.pnlcomm}")
+            # print(f"TRADE closed, Profit: {trade.pnl}, Net Profit: {trade.pnlcomm}")
             current_position_size = self.position.size
-            print(f"Current position size: {current_position_size}")
+            # print(f"Current position size: {current_position_size}")
             # Make sure no order got double triggered
             if current_position_size > 0:
                 self.sell()
@@ -97,6 +114,9 @@ class TCLMax(bt.Strategy):
                 self.buy()
             # Clear and reset orders
             self.accountSize += trade.pnl
+            self.total_trades += 1
+            if trade.pnl > 0:
+                self.winning_trades += 1
             self.cancel_all_orders()
             self.StopLoss = None
             self.TakeProfit = None
@@ -123,85 +143,91 @@ class TCLMax(bt.Strategy):
         if self.dir == 1:
             # Check if the order was completed
             if order.status in [order.Completed]:
-                print(f"Order Complete")
+                # print(f"Order Complete")
                 if order == self.TakeProfit:
-                    print(f"TAKE PROFIT LONG order executed, Price: {order.executed.price}, Size: {order.executed.size}")
+                    # print(f"TAKE PROFIT LONG order executed, Price: {order.executed.price}, Size: {order.executed.size}")
                     self.cancel_all_orders()
                 elif order == self.StopLoss:
-                    print(f"STOP LOSS LONG order executed, Price: {order.executed.price}, Size: {order.executed.size}")
-                    print(self.SL)
-                    for orders in self.broker.get_orders_open():
-                        print(orders)
+                    # print(f"STOP LOSS LONG order executed, Price: {order.executed.price}, Size: {order.executed.size}")
+                    # print(self.SL)
+                    self.SL_hit += 1
+                    # for orders in self.broker.get_orders_open():
+                        # print(orders)
                     self.cancel_all_orders()
-                    for orders in self.broker.get_orders_open():
-                        print(orders)
+                    # for orders in self.broker.get_orders_open():
+                        # print(orders)
                 else:
-                    print(f"BUY order executed, Price: {order.executed.price}, Size: {order.executed.size}")
+                    # print(f"BUY order executed, Price: {order.executed.price}, Size: {order.executed.size}")
                     if not self.TakeProfit:
                         # Place take profit
                         self.TakeProfit = self.sell(price=self.TP, exectype=bt.Order.Limit, size=None)
-                        print("TP placed")
+                        # print("TP placed")
                     else:
                         if order == self.Limit1:
                             # update take profit
                             self.TakeProfit = self.sell(exectype=bt.Order.Limit, price=self.EP, size=None)
-                            print("TP updated L1")
+                            self.L1_hit += 1
+                            # print("TP updated L1")
                         if order == self.Limit2:
                             # update take profit
                             self.cancel(self.TakeProfit)
                             self.TakeProfit = self.sell(exectype=bt.Order.Limit, price=self.L1, size=None)
-                            print("TP updated L2")
+                            self.L2_hit += 1
+                            # print("TP updated L2")
                             if not self.StopLoss:
                                 # place stop loss
-                                self.StopLoss = self.sell(price=self.SL, exectype=bt.Order.Stop, size=None)
-                                print("Stop Loss placed")
+                                self.StopLoss = self.sell(price=self.SL, exectype=bt.Order.StopLimit, plimit=self.SL, size=None)
+                                # print("Stop Loss placed")
                 # Set the entry to None
                 self.Entry = None
-            elif order.status in [order.Canceled]:
-                print("Order Canceled")
-            elif order.status in [order.Margin, order.Rejected]:
-                print('Order Margin/Rejected')
+            # elif order.status in [order.Canceled]:
+                # print("Order Canceled")
+            # elif order.status in [order.Margin, order.Rejected]:
+                # print('Order Margin/Rejected')
         # SHORT
         elif self.dir == 0:
             # Check if order was completed
             if order.status in [order.Completed]:
-                print(f"Order Complete")
+                # print(f"Order Complete")
                 if order == self.TakeProfit:
-                    print(f"TAKE PROFIT SHORT order executed, Price: {order.executed.price}, Size: {order.executed.size}")
+                    # print(f"TAKE PROFIT SHORT order executed, Price: {order.executed.price}, Size: {order.executed.size}")
                     self.cancel_all_orders()
                 elif order == self.StopLoss:
-                    print(f"STOP LOSS SHORT order executed, Price: {order.executed.price}, Size: {order.executed.size}")
-                    for orders in self.broker.get_orders_open():
-                        print(orders)
+                    # print(f"STOP LOSS SHORT order executed, Price: {order.executed.price}, Size: {order.executed.size}")
+                    self.SL_hit += 1
+                    # for orders in self.broker.get_orders_open():
+                        # print(orders)
                     self.cancel_all_orders()
-                    for orders in self.broker.get_orders_open():
-                        print(orders)
+                    # for orders in self.broker.get_orders_open():
+                        # print(orders)
                 else:
-                    print(f"SELL order executed, Price: {order.executed.price}, Size: {order.executed.size}")
+                    # print(f"SELL order executed, Price: {order.executed.price}, Size: {order.executed.size}")
                     if not self.TakeProfit:
                         # Place take profit
                         self.TakeProfit = self.buy(price=self.TP, exectype=bt.Order.Limit, size=None)
-                        print("TP placed")
+                        # print("TP placed")
                     else:
                         if order == self.Limit1:
                             # Update take profit to L1
                             self.TakeProfit = self.buy(exectype=bt.Order.Limit, price=self.EP, size=None)
-                            print("TP updated L1")
+                            self.L1_hit += 1
+                            # print("TP updated L1")
                         if order == self.Limit2:
                             # Update take profit to L2
                             self.cancel(self.TakeProfit)
                             self.TakeProfit = self.buy(exectype=bt.Order.Limit, price=self.L1, size=None)
-                            print("TP updated L2")
+                            self.L2_hit += 1
+                            # print("TP updated L2")
                             if not self.StopLoss:
                                 # Place stop loss
-                                self.StopLoss = self.buy(price=self.SL, exectype=bt.Order.Stop, size=None)
-                                print("Stop Loss placed")
+                                self.StopLoss = self.buy(price=self.SL, exectype=bt.Order.StopLimit, plimit=self.SL, size=None)
+                                # print("Stop Loss placed")
                 # Reset Entry
                 self.Entry = None
-            elif order.status in [order.Canceled]:
-                print("Order Canceled")
-            elif order.status in [order.Margin, order.Rejected]:
-                print('Order Margin/Rejected')
+            # elif order.status in [order.Canceled]:
+                # print("Order Canceled")
+            # elif order.status in [order.Margin, order.Rejected]:
+                # print('Order Margin/Rejected')
     # This is the main function of the strategy. Next gets called with each line of data (or candle). It checks if the
     # trade conditions are met, and if so, it places the orders.
     def next(self):
@@ -292,84 +318,84 @@ class TCLMax(bt.Strategy):
             # Make sure there has not been a sharp increase in price
             # Check for 1 hr FVGs
             # 1. 20, 50, 200 EMAs lined up
-            elif self.ema20 > self.ema50 > self.ema200:
+            elif self.data.high[0] == self.rolling_high:
                 # 2. Price above 200 EMA on 5m, 15m, 1hr
                 if self.data.high[0] > self.ema15m and self.data.high[0] > self.ema1hr:
                     # 3. New 48hr high
-                    if self.data.high[0] == self.rolling_high:
+                    if self.ema20 > self.ema50 > self.ema200 or self.params.ema_check_param:
                         self.trend_high = self.data.high[0]
                         # 4. Established low 12-36hrs previous
                         for i in range(-432, -144):
-                            window_low = self.data.low.get(size=52 * 2 + 1, ago=i+52)
+                            window_low = self.data.low.get(size=self.params.established_low * 2 + 1, ago=i+self.params.established_low)
                             window_low2 = self.data.low.get(size=-i+10, ago=-1)
                             if self.data.low[i] == min(window_low) and self.data.low[i] == min(window_low2):
                                 # 5. Range 4-7%
                                 self.too_steep = 0
-                                for j in range(-600, -16):
-                                    if (self.data.high[j + 16] - self.data.low[j])/self.data.low[j] > 0.04:
+                                for j in range(-600, -self.params.steep_candles):
+                                    if (self.data.high[j + self.params.steep_candles] - self.data.low[j])/self.data.low[j] > self.params.too_steep:
                                         self.too_steep = 1
                                 if self.too_steep == 0:
-                                    if 0.04 < (self.trend_high-self.data.low[i])/self.data.low[i] < 0.1:
+                                    if self.params.min_range < (self.trend_high-self.data.low[i])/self.data.low[i] < self.params.max_range:
                                         self.trend_low = self.data.low[i]
                                         self.EP = (self.trend_high-self.trend_low)*0.618+self.trend_low
                                         self.L1 = (self.trend_high-self.trend_low)*0.382+self.trend_low
                                         self.L2 = (self.trend_high-self.trend_low)*0.17+self.trend_low
                                         self.SL = -(self.trend_high-self.trend_low)*0.05+self.trend_low
                                         self.TP = (self.trend_high-self.trend_low)*1.272+self.trend_low
-                                        print(f"E: {self.EP}, TP: {self.TP}, L1: {self.L1}, L2: {self.L2}, SL: {self.SL}, High: {self.trend_high}, Low: {self.trend_low}")
+                                        # print(f"E: {self.EP}, TP: {self.TP}, L1: {self.L1}, L2: {self.L2}, SL: {self.SL}, High: {self.trend_high}, Low: {self.trend_low}")
                                         # Calculate Entry, L1, and L2 position size so L1 avg cost is at 0.441 and L2 at 0.29
                                         # 35% Account risk on 50x leverage
                                         if self.compound:
                                             self.Entry_size = (self.accountSize * self.risk)/(self.EP + 3 * self.L1 + 5 * self.L2 - 9 * self.SL)
                                         else:
-                                            self.Entry_size = (5000)/(self.EP + 3 * self.L1 + 5 * self.L2 - 9 * self.SL)
+                                            self.Entry_size = (350)/(self.EP + 3 * self.L1 + 5 * self.L2 - 9 * self.SL)
                                         self.Limit1_size = 3*self.Entry_size
                                         self.Limit2_size = 5*self.Entry_size
                                         # Check to see if we are in the time range. If so, store the order instead of placing it
                                         if (dt.time(0, 0) <= current_time and current_time < dt.time(9, 0)):
                                             self.stored_trade = ('buy', self.EP, self.Entry_size, self.L1, self.Limit1_size, self.L2, self.Limit2_size, self.TP, self.SL)
-                                            print("Long trade setup stored")
+                                            # print("Long trade setup stored")
                                         else:
                                             self.Entry = self.buy(exectype=bt.Order.Limit, price=self.EP, size=self.Entry_size)
                                             self.Limit1 = self.buy(exectype=bt.Order.Limit, price=self.L1, size=self.Limit1_size)
                                             self.Limit2 = self.buy(exectype=bt.Order.Limit, price=self.L2, size=self.Limit2_size)
-                                            print("Long Order placed")
+                                            # print("Long Order placed")
                                         self.dir = 1
                                         self.trade_check = 0
                                         break
             # SHORT
             # 1. Check to see if the EMAs are aligned
-            elif self.ema20 < self.ema50 < self.ema200:
+            elif self.data.low[0] == self.rolling_low:
                 # 2. Price below 200 EMA on 5m, 15m, 1hr
                 if self.data.low[0] < self.ema15m and self.data.low[0] < self.ema1hr:
                     # 3. New 48hr low
-                    if self.data.low[0] == self.rolling_low:
+                    if self.ema20 < self.ema50 < self.ema200 or self.params.ema_check_param:
                         self.trend_low = self.data.low[0]
                         # 4. Established high 12-36hrs previous
                         for i in range(-432, -144):
-                            window_high = self.data.high.get(size=52 * 2 + 1, ago=i+52)
+                            window_high = self.data.high.get(size=self.params.established_low * 2 + 1, ago=i+self.params.established_low)
                             window_high2 = self.data.high.get(size=-i+10, ago=-1)
                             if self.data.high[i] == max(window_high) and self.data.high[i] == max(window_high2):
                                 # 5. Range 4-7%
                                 self.too_steep = 0
-                                for j in range(-600, -16):
-                                    if (self.data.high[j] - self.data.low[j+16])/self.data.high[j] > 0.04:
+                                for j in range(-600, -self.params.steep_candles):
+                                    if (self.data.high[j] - self.data.low[j+self.params.steep_candles])/self.data.high[j] > self.params.too_steep:
                                         self.too_steep = 1
                                 if self.too_steep == 0:
-                                    if 0.04 < (self.data.high[i]-self.trend_low)/self.data.high[i] < 0.1:
+                                    if self.params.min_range < (self.data.high[i]-self.trend_low)/self.data.high[i] < self.params.max_range:
                                         self.trend_high = self.data.high[i]
                                         self.EP = (self.trend_low-self.trend_high)*0.618+self.trend_high
                                         self.L1 = (self.trend_low-self.trend_high)*0.382+self.trend_high
                                         self.L2 = (self.trend_low-self.trend_high)*0.17+self.trend_high
                                         self.SL = -(self.trend_low-self.trend_high)*0.05+self.trend_high
                                         self.TP = (self.trend_low-self.trend_high)*1.272+self.trend_high
-                                        print(f"E: {self.EP}, TP: {self.TP}, L1: {self.L1}, L2: {self.L2}, SL: {self.SL}, High: {self.trend_high}, Low: {self.trend_low}")
+                                        # print(f"E: {self.EP}, TP: {self.TP}, L1: {self.L1}, L2: {self.L2}, SL: {self.SL}, High: {self.trend_high}, Low: {self.trend_low}")
                                         # Calculate Entry, L1, and L2 position size so L1 avg cost is at 0.441 and L2 at 0.29
                                         # 35% Account risk on 50x leverage
                                         if self.compound:
                                             self.Entry_size = abs((self.accountSize * self.risk)/(self.EP + 3 * self.L1 + 5 * self.L2 - 9 * self.SL))
                                         else:
-                                            self.Entry_size = abs(5000/(self.EP + 3 * self.L1 + 5 * self.L2 - 9 * self.SL))
+                                            self.Entry_size = abs(350/(self.EP + 3 * self.L1 + 5 * self.L2 - 9 * self.SL))
                                         self.Limit1_size = 3*self.Entry_size
                                         self.Limit2_size = 5*self.Entry_size
                                         # Check to see if we are in the time range. If so, store the order instead of placing it
@@ -378,20 +404,20 @@ class TCLMax(bt.Strategy):
                                             self.stored_trade = (
                                             'sell', self.EP, self.Entry_size, self.L1, self.Limit1_size, self.L2,
                                             self.Limit2_size, self.TP, self.SL)
-                                            print(f"Short trade setup stored Time: {current_time}")
+                                            # print(f"Short trade setup stored Time: {current_time}")
                                         else:
                                             self.Entry = self.sell(exectype=bt.Order.Limit, price=self.EP, size=self.Entry_size)
                                             self.Limit1 = self.sell(exectype=bt.Order.Limit, price=self.L1, size=self.Limit1_size)
                                             self.Limit2 = self.sell(exectype=bt.Order.Limit, price=self.L2, size=self.Limit2_size)
-                                            print("Short Order placed")
+                                            # print("Short Order placed")
                                         self.dir = 0
                                         self.trade_check = 0
                                         break
             # Once we exit NY open, check if we can place orders for a late entry trade
             if self.stored_trade and dt.time(9, 0) <= current_time:
                 trade_type, EP, Entry_size, L1, Limit1_size, L2, Limit2_size, self.TP, self.SL = self.stored_trade
-                print(
-                    f"Trade Type: {trade_type}, E: {self.EP}, TP: {self.TP}, L1: {self.L1}, L2: {self.L2}, SL: {self.SL}, High: {self.trend_high}, Low: {self.trend_low}")
+                # print(
+                #     f"Trade Type: {trade_type}, E: {self.EP}, TP: {self.TP}, L1: {self.L1}, L2: {self.L2}, SL: {self.SL}, High: {self.trend_high}, Low: {self.trend_low}")
                 if trade_type == 'buy':
                     if self.data.low[0] < self.SL:
                         self.stored_trade = None
@@ -399,7 +425,7 @@ class TCLMax(bt.Strategy):
                     self.Entry = self.buy(exectype=bt.Order.Limit, price=EP, size=Entry_size)
                     self.Limit1 = self.buy(exectype=bt.Order.Limit, price=L1, size=Limit1_size)
                     self.Limit2 = self.buy(exectype=bt.Order.Limit, price=L2, size=Limit2_size)
-                    print("Stored Long Order placed")
+                    # print("Stored Long Order placed")
                     self.dir = 1
                 elif trade_type == 'sell':
                     if self.data.high[0] > self.SL:
@@ -408,11 +434,28 @@ class TCLMax(bt.Strategy):
                     self.Entry = self.sell(exectype=bt.Order.Limit, price=EP, size=Entry_size)
                     self.Limit1 = self.sell(exectype=bt.Order.Limit, price=L1, size=Limit1_size)
                     self.Limit2 = self.sell(exectype=bt.Order.Limit, price=L2, size=Limit2_size)
-                    print("Stored Short Order placed")
+                    # print("Stored Short Order placed")
                     self.dir = 0
                 self.stored_trade = None
 
-
+    def stop(self):
+        win_percentage = (self.winning_trades / self.total_trades) * 100 if self.total_trades > 0 else 0
+        print(f'Total Trades: {self.total_trades}')
+        print(f'Winning Trades: {self.winning_trades}')
+        print(f'Winning Percentage: {win_percentage:.2f}%')
+        Losing_trades = self.total_trades - self.winning_trades
+        L2_wins = self.L2_hit - Losing_trades
+        L1_wins = self.L1_hit - self.L2_hit
+        Entry_wins = self.total_trades - self.L1_hit
+        final_value = self.broker.getvalue()
+        initial_value = 10000000  # Assuming initial cash is 10,000
+        profit = final_value - initial_value
+        print(f"Entry wins: {Entry_wins}, L1 wins: {L1_wins}, L2 wins: {L2_wins}, Losses: {Losing_trades}, Profit: {profit}")
+        with open('TCLM_strategy_results.csv', mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([self.params.data_name, self.params.rolling_period,self.params.too_steep,self.params.steep_candles,self.params.min_range,self.params.max_range,
+                            self.params.established_low,self.params.ema_check_param, self.total_trades, self.winning_trades, Losing_trades, L1_wins, L2_wins, Entry_wins,
+                             win_percentage, profit])
 
 if __name__ == '__main__':
     # Create variable
@@ -452,32 +495,54 @@ if __name__ == '__main__':
     # print(df)
     # print(df15)
     # print(df1)
-
-    # Load the data
-    data = btfeeds.GenericCSVData(
-        dataname='sol_usd_5min_data.csv',
-
-        nullvalue=0.0,
-        compression=5,
-        timeframe=bt.TimeFrame.Minutes,
-        datetime=0,
-        high=1,
-        low=2,
-        open=3,
-        close=4,
-        volume=5,
-        openinterest=-1
-    )
-    # Call cerebro to run the backtest
+    data_files = ['data_5min/ada_usd_5min_data.csv', 'data_5min/apt_usd_5min_data.csv', 'data_5min/atom_usd_5min_data.csv', 'data_5min/avax_usd_5min_data.csv', 'data_5min/dot_usd_5min_data.csv', 'data_5min/ltc_usd_5min_data.csv', 'data_5min/matic_usd_5min_data.csv', 'data_5min/link_usd_5min_data.csv',
+                  'data_5min/sol_usd_5min_data.csv']
     cerebro = bt.Cerebro()
-    cerebro.adddata(data)
-    cerebro.addstrategy(TCLMax)
-    cerebro.broker.setcash(cash)
-    cerebro.broker.set_slippage_perc(0.005)
-    cerebro.broker.setcommission(commission=0.0005)
-    cerebro.addsizer(bt.sizers.PercentSizer, percents=risk)
-    cerebro.addanalyzer(bt.analyzers.AnnualReturn, _name="areturn")
-    teststrat = cerebro.run()
-    cerebro.plot()
-    print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
-    print(teststrat[0].analyzers.areturn.get_analysis())
+    # Load the data
+    for data_file in data_files:
+        data = btfeeds.GenericCSVData(
+            dataname=data_file,
+
+            nullvalue=0.0,
+            compression=5,
+            timeframe=bt.TimeFrame.Minutes,
+            datetime=0,
+            high=1,
+            low=2,
+            open=3,
+            close=4,
+            volume=5,
+            openinterest=-1
+        )
+        cerebro = bt.Cerebro()
+        cerebro.adddata(data)
+        cerebro.optstrategy(
+            TCLMax,
+            ema_check_param=[True, False],
+            rolling_period=[24, 30, 36],
+            too_steep=[0.045, 0.06],
+            steep_candles=[15, 20],
+            min_range=[0.04],
+            max_range=[0.08, 0.105],
+            established_low=[40, 47, 54],
+            data_name=[data_file],
+        )
+        cerebro.broker.setcash(cash)
+        cerebro.broker.set_slippage_perc(0.005)
+        cerebro.broker.setcommission(commission=0.0000)
+        cerebro.addsizer(bt.sizers.PercentSizer, percents=risk)
+        cerebro.addanalyzer(bt.analyzers.AnnualReturn, _name="areturn")
+        teststrat = cerebro.run(maxcpus=8)
+    # cerebro.plot(style='candlestick', volume=False, grid=True, subplot=True)
+    # print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
+    # print(teststrat[0].analyzers.areturn.get_analysis())
+
+    filename = 'TCLM_strategy_results.csv'
+    data = load_csv_to_list(filename)
+
+    # Sort data by the last element (win percentage)
+    sorted_data = sort_data_by_last_element(data)
+
+    # Print sorted data
+    print("Sorted Strategy Results (by Winning Percentage):")
+    print_sorted_data(sorted_data)

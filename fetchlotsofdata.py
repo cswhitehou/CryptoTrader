@@ -38,20 +38,20 @@ def get_binance_bars(symbol, interval, startTime, endTime):
 
 count = 0
 df_list = []
-last_datetime = dt.datetime(2023, 1, 1)
+last_datetime = dt.datetime(2021, 1, 1)
 while True:
-    new_df = get_binance_bars('LINKUSDT', '1h', last_datetime, dt.datetime.now())
+    new_df = get_binance_bars('MATICUSDT', '5m', last_datetime, dt.datetime.now())
     if new_df is None:
         break
     df_list.append(new_df)
     last_datetime = max(new_df.index) + dt.timedelta(0, 1)
     count+=1
-    if count >= 165:
+    if count >= 500:
         break
 
 
 df = pd.concat(df_list)
 df.shape
-csv_file_path = "link_usd_1hr_data.csv"
+csv_file_path = "data_5min/matic_usd_5min_data2.csv"
 df.to_csv(csv_file_path)
 print(df)
