@@ -16,7 +16,7 @@ exchange = ccxt.phemex({
     'secret': secret,
     'options': {'defaultType': 'swap'}
 })
-symbols = ['MATIC/USDT:USDT', 'LINK/USDT:USDT', 'LTC/USDT:USDT', 'DOT/USDT:USDT', 'SOL/USDT:USDT']
+symbols = ['MATIC/USDT:USDT', 'XRP/USDT:USDT', 'DOT/USDT:USDT', 'SOL/USDT:USDT', 'LINK/USDT:USDT']
 symbols_queue = deque(symbols)
 
 
@@ -136,11 +136,11 @@ def check_for_trades(df, df15, df1h, compound, accountSize, risk, type, trend):
                     if df['Support'].iloc[i] == 1 and df['low'].iloc[i] == window_low2:
                         too_steep = 0
                         for j in range(-600, -16):
-                            if (df['high'].iloc[j + 16] - df['low'].iloc[j]) / df['low'].iloc[j] > 0.04:
+                            if (df['high'].iloc[j + 16] - df['low'].iloc[j]) / df['low'].iloc[j] > 0.055:
                                 too_steep = 1
                         if too_steep == 0:
                             print("passed 4 Long")
-                            if 0.04 < (trend_high - df['low'].iloc[i]) / df['low'].iloc[i] < 0.1:
+                            if 0.04 < (trend_high - df['low'].iloc[i]) / df['low'].iloc[i] < 0.09:
                                 print("Long Opportunity")
                                 trend_low = df['low'].iloc[i]
                                 EP = (trend_high - trend_low) * 0.618 + trend_low
@@ -170,11 +170,11 @@ def check_for_trades(df, df15, df1h, compound, accountSize, risk, type, trend):
                     if df['Resistance'].iloc[i] == 1 and df['high'].iloc[i] == window_high2:
                         too_steep = 0
                         for j in range(-600, -16):
-                            if (df['high'].iloc[j] - df['low'].iloc[j + 16]) / df['high'].iloc[j] > 0.04:
+                            if (df['high'].iloc[j] - df['low'].iloc[j + 16]) / df['high'].iloc[j] > 0.055:
                                 too_steep = 1
                         if too_steep == 0:
                             print("passed 4 short")
-                            if 0.04 < (df['high'].iloc[i] - trend_low) / df['high'].iloc[i] < 0.1:
+                            if 0.04 < (df['high'].iloc[i] - trend_low) / df['high'].iloc[i] < 0.09:
                                 print("Short Opportunity")
                                 trend_high = df['high'].iloc[i]
                                 EP = (trend_low - trend_high) * 0.618 + trend_high
@@ -238,11 +238,21 @@ def place_take_profit_order(amount, take_profit_price, orders, side, symbol):
         return orders
     except ccxt.BaseError as e:
         print(f"An error occurred: {str(e)}")
+        # exchange.close_position(symbol)
         reset_orders(symbol)
         return []
 
 
 def reset_orders(symbol):
+    pos_size = exchange.fetch_positions([symbol])[0]['info']['size']
+    pos_side = exchange.fetch_positions([symbol])[0]['info']['side']
+    if pos_size != 0:
+        print(pos_size)
+        print(pos_side)
+        if pos_side == 'Sell':
+            exchange.create_order(symbol, 'market', 'buy', pos_size, params={'reduceOnly': True})
+        elif pos_side == 'Buy':
+            exchange.create_order(symbol, 'market', 'sell', pos_size, params={'reduceOnly': True})
     exchange.cancel_all_orders(symbol)
     exchange.cancel_all_orders(symbol=symbol, params={'untriggered': True})
     print("Orders Canceled")
@@ -267,8 +277,8 @@ def add_EMAs(df):
     df['EMA_20'] = df['close'].ewm(span=20, adjust=False).mean()
     df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
     df['EMA_200'] = df['close'].ewm(span=200, adjust=False).mean()
-    df['rolling_high'] = df['high'].rolling(window=12 * 48).max()
-    df['rolling_low'] = df['low'].rolling(window=12 * 48).min()
+    df['rolling_high'] = df['high'].rolling(window=12 * 36).max()
+    df['rolling_low'] = df['low'].rolling(window=12 * 36).min()
     return df
 
 def check_for_entry(orders, all_orders, EP, L1, Entry_size, type, symbol):
@@ -281,13 +291,19 @@ def check_for_entry(orders, all_orders, EP, L1, Entry_size, type, symbol):
                 print("Entry Reached")
                 all_orders['Entry'] = None
             elif order_id == all_orders['Limit1']:
-                exchange.cancel_order(all_orders['TakeProfit'])
-                new_orders = place_take_profit_order(Entry_size*4, EP, orders, type, symbol)
+                exchange.cancel_order(all_orders['TakeProfit'], symbol)
+                if type == 'buy':
+                    new_orders = place_take_profit_order(Entry_size*4, EP, orders, 'sell', symbol)
+                elif type == 'sell':
+                    new_orders = place_take_profit_order(Entry_size*4, EP, orders, 'buy', symbol)
                 all_orders['TakeProfit'] = new_orders[-1]
                 all_orders['Limit1'] = None
             elif order_id == all_orders['Limit2']:
-                exchange.cancel_order(all_orders['TakeProfit'])
-                new_orders = place_take_profit_order(Entry_size*9, L1, orders, type, symbol)
+                exchange.cancel_order(all_orders['TakeProfit'], symbol)
+                if type == 'buy':
+                    new_orders = place_take_profit_order(Entry_size*9, L1, orders, 'sell', symbol)
+                elif type == 'sell':
+                    new_orders = place_take_profit_order(Entry_size*9, L1, orders, 'buy', symbol)
                 all_orders['TakeProfit'] = new_orders[-1]
                 all_orders['Limit2'] = None
             elif order_id == all_orders['TakeProfit']:
@@ -326,16 +342,19 @@ def check_historical_trades(symbol):
                 if data['high'].iloc[-1] > trend:
                     print("New High")
                     stored_prices = []
+                    stored_sizes = []
             if type == 'sell':
                 if data['low'].iloc[-1] < trend:
                     print("New Low")
                     stored_prices = []
+                    stored_sizes = []
         prices, sizes, type, trend = check_for_trades(data, data15, data1h, compound, 20, .1, type, trend)
         # print(prices)
         # print(type)
         if len(prices) > 0:
             stored_prices = prices
             stored_sizes = sizes
+            print(stored_prices)
         stored_prices, trade_check = trade_completion_check(stored_prices, trade_check, type,  data)
     return stored_prices, stored_sizes, type, trend
 
@@ -427,6 +446,7 @@ if __name__ == '__main__':
     for symbol in symbols:
         exchange.set_position_mode(hedged=False, symbol=symbol)
         exchange.set_leverage(-50, symbol)
+        reset_orders(symbol)
     for i in range(len(symbols)):
         symbol = symbols_queue.popleft()
         symbols_queue.append(symbol)
@@ -434,6 +454,7 @@ if __name__ == '__main__':
         print(symbols_queue)
         stored_prices, sizes, type, trend = check_historical_trades(symbol)
         print(sizes)
+        print(stored_prices)
         if len(sizes) > 0:
             stored_sizes = sizes
             stored_prices.append(symbol)
@@ -442,7 +463,7 @@ if __name__ == '__main__':
         symbol = symbols_queue.pop()
         df, df15, df1h = fetch_historical_data(symbol)
         df = add_EMAs(df)
-        supports, resistances = find_support_resistance(df, 52)
+        supports, resistances = find_support_resistance(df, 40)
         df = add_support_resistance(df, supports, resistances)
         current_time = dt.datetime.now().time()
         print(symbol)
