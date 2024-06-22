@@ -1,12 +1,8 @@
 # Import everything
 import time
-
 from loadAPI import getKey
 import pandas as pd
-import backtrader as bt
-import numpy as np
 import ccxt
-import backtrader.feeds as btfeeds
 import datetime as dt
 from collections import deque
 
@@ -281,7 +277,7 @@ def add_EMAs(df):
     df['rolling_low'] = df['low'].rolling(window=12 * 36).min()
     return df
 
-def check_for_entry(orders, all_orders, EP, L1, Entry_size, type, symbol):
+def check_for_entry(orders, all_orders, EP, L1, Entry_size, type, symbol, end_trade, prev_size, log_prices):
     new_orders = orders
     closed_orders = exchange.fetch_closed_orders(symbol)
     for order in closed_orders:
@@ -289,6 +285,7 @@ def check_for_entry(orders, all_orders, EP, L1, Entry_size, type, symbol):
             order_id = order['id']
             if order_id == all_orders['Entry']:
                 print("Entry Reached")
+                end_trade = 'Entry Win'
                 all_orders['Entry'] = None
             elif order_id == all_orders['Limit1']:
                 exchange.cancel_order(all_orders['TakeProfit'], symbol)
@@ -297,6 +294,7 @@ def check_for_entry(orders, all_orders, EP, L1, Entry_size, type, symbol):
                 elif type == 'sell':
                     new_orders = place_take_profit_order(Entry_size*4, EP, orders, 'buy', symbol)
                 all_orders['TakeProfit'] = new_orders[-1]
+                end_trade = 'L1 Win'
                 all_orders['Limit1'] = None
             elif order_id == all_orders['Limit2']:
                 exchange.cancel_order(all_orders['TakeProfit'], symbol)
@@ -305,12 +303,16 @@ def check_for_entry(orders, all_orders, EP, L1, Entry_size, type, symbol):
                 elif type == 'sell':
                     new_orders = place_take_profit_order(Entry_size*9, L1, orders, 'buy', symbol)
                 all_orders['TakeProfit'] = new_orders[-1]
+                end_trade = 'L2 Win'
                 all_orders['Limit2'] = None
             elif order_id == all_orders['TakeProfit']:
+                log_results(log_prices, prev_size, symbol, end_trade)
                 all_orders, new_orders = reset_orders(symbol)
             elif order_id == all_orders['StopLoss']:
+                log_results(log_prices, prev_size, symbol, end_trade)
                 all_orders, new_orders = reset_orders(symbol)
-    return all_orders, new_orders
+                end_trade = 'Stop Loss'
+    return all_orders, new_orders, end_trade
 
 """def check_for_entry(orders, all_orders, EP, L1, Entry_size, type, symbol):
     new_orders = orders
@@ -320,6 +322,13 @@ def check_for_entry(orders, all_orders, EP, L1, Entry_size, type, symbol):
         all_orders, new_orders = reset_orders(all_orders, symbol)
     return all_orders, new_orders"""
 
+def log_results(log_prices, prev_size, symbol, end_trade):
+    bal = exchange.fetch_balance()
+    accountSize = bal['info']['data']['account']['accountBalanceRv']
+    pnl = accountSize - prev_size
+    date = dt.datetime.now()
+    with open('TCLM_log.txt', 'w') as file:
+        file.write(f'{date}   {symbol}   {end_trade}  PnL: ${pnl} EP: {log_prices[0]} L1: {log_prices[1]} L2: {log_prices[2]} TP: {log_prices[3]} SL: {log_prices[4]}')
 
 def check_historical_trades(symbol):
     trade_check = 0
@@ -421,13 +430,6 @@ if __name__ == '__main__':
         'secret': secret,
         'options': {'defaultType': 'swap'}
     })
-    # symbol = 'AVAX/USDT:USDT'
-    """symbol_data = {}
-    for symbol in symbols:
-        symbol_data[symbol] = {'prices': [], 'stored_prices': [], 'trade_prices': [], 'type': 'buy', 'trend': 0,
-                               'sizes': [], 'orders': [], 'trade_check': 0, 'Entry': False,
-                               'all_orders': {'Entry': None, 'Limit1': None, 'Limit2': None, 'TakeProfit': None,
-                                              'StopLoss': None}}"""
     compound = False
     Entry = False
     all_orders = {'Entry': None, 'Limit1': None, 'Limit2': None, 'TakeProfit': None, 'StopLoss': None}
@@ -443,6 +445,9 @@ if __name__ == '__main__':
     trade_check = 0
     starting_trade = 0
     in_position = False
+    log_bal = 0
+    log_prices = []
+    end_trade = ''
     for symbol in symbols:
         exchange.set_position_mode(hedged=False, symbol=symbol)
         exchange.set_leverage(-50, symbol)
@@ -497,6 +502,8 @@ if __name__ == '__main__':
                 all_orders['Limit2'] = orders[2]
                 all_orders['TakeProfit'] = orders[3]
                 all_orders['StopLoss'] = orders[4]
+                log_prices = prices
+                log_bal = accountSize
         if len(stored_prices) > 0:
             if symbol == stored_prices[-1]:
                 stored_prices, trade_check = trade_completion_check(stored_prices, trade_check, type, df)
@@ -512,8 +519,10 @@ if __name__ == '__main__':
                     all_orders['StopLoss'] = orders[4]
                     stored_prices = []
                     stored_sizes = []
+                    log_prices = prices
+                    log_bal = accountSize
         if len(orders) > 0:
-            all_orders, orders = check_for_entry(orders, all_orders, EP, L1, Entry_size, type, symbol)
+            all_orders, orders, end_trade = check_for_entry(orders, all_orders, EP, L1, Entry_size, type, symbol, end_trade, log_bal, log_prices)
         if len(orders) > 0:
             symbols_queue.append(symbol)
         else:
