@@ -1,12 +1,8 @@
 # Import everything
 import time
-
 from loadAPI import getSubKey
 import pandas as pd
-import backtrader as bt
-import numpy as np
 import ccxt
-import backtrader.feeds as btfeeds
 import datetime as dt
 from collections import deque
 
@@ -16,17 +12,18 @@ exchange = ccxt.phemex({
     'secret': secret,
     'options': {'defaultType': 'swap'}
 })
-symbols = ['MATIC/USDT:USDT', 'LINK/USDT:USDT', 'SOL/USDT:USDT', 'APT/USDT:USDT', 'DOT/USDT:USDT', 'ADA/USDT:USDT', 'ATOM/USDT:USDT', 'XRP/USDT:USDT']
+symbols = ['APT/USDT:USDT', 'MATIC/USDT:USDT', 'LINK/USDT:USDT', 'SOL/USDT:USDT', 'DOT/USDT:USDT', 'ADA/USDT:USDT',
+           'ATOM/USDT:USDT', 'XRP/USDT:USDT']
 symbols_queue = deque(symbols)
 
 
 def find_fair_value_gaps(df):
     gaps = []
-    for i in range(-2, -74):
-        if df['low'].iloc[i] > df['high'].iloc[i-2]:
-            gaps.append((df['low'].iloc[i], df['high'].iloc[i - 2], df['low'].iloc[i]-df['high'].iloc[i - 2], (df['low'].iloc[i]+df['high'].iloc[i - 2])/2, 'bullish'))
-        elif df['low'].iloc[i-2] > df['high'].iloc[i]:
-            gaps.append((df['low'].iloc[i-2], df['high'].iloc[i], df['low'].iloc[i-2]-df['high'].iloc[i], (df['low'].iloc[i]+df['high'].iloc[i - 2])/2, 'bearish'))
+    for i in range(-49, -3):
+        if df['low'].iloc[i] > df['high'].iloc[i+2]:
+            gaps.append((df['low'].iloc[i], df['high'].iloc[i + 2], df['low'].iloc[i]-df['high'].iloc[i + 2], (df['low'].iloc[i]+df['high'].iloc[i + 2])/2, 'bearish'))
+        elif df['low'].iloc[i+2] > df['high'].iloc[i]:
+            gaps.append((df['low'].iloc[i+2], df['high'].iloc[i], df['low'].iloc[i+2]-df['high'].iloc[i], (df['low'].iloc[i+2]+df['high'].iloc[i])/2, 'bullish'))
     return gaps
 
 def find_support_resistance(df, window=4):
@@ -51,7 +48,9 @@ def add_support_resistance(df, supports, resistances):
 
 def place_orders(prices, size, type, symbol):
     try:
-        order = exchange.create_limit_order(symbol, side=type, amount=size, price=prices[0], params={
+        order = exchange.create_order(symbol, 'market', side=type, amount=size, price=None, params={
+            'stopPx': prices[0],
+            'ordType': 'Stop',
             'stopLoss': {
                 'triggerPrice': prices[2],
                 'type': 'market',
@@ -69,7 +68,7 @@ def place_orders(prices, size, type, symbol):
         return None
 
 
-def check_for_trades(df, SR, FVGs, risk, type, trend):
+def check_for_trades(symbol, df, SR, FVGs, risk, type, trend):
     print("Checking for trade")
     print(f"HIGH: {df['high'].iloc[-1]} LOW: {df['low'].iloc[-1]}")
     print(f"ROLLING HIGH: {df['rolling_high'].iloc[-1]} ROLLING LOW: {df['rolling_low'].iloc[-1]}")
@@ -78,48 +77,37 @@ def check_for_trades(df, SR, FVGs, risk, type, trend):
         print("passed 1 long")
         trend_high = df['high'].iloc[-1]
 # Find most recent support for the low
-        for i in range(6, 48):
+        for i in range(6, 83):
             window_low = df['low'].iloc[-i - 8:-i + 8 + 1].min()
             if df['low'].iloc[-i] == window_low:
                 print("passed 2 long")
                 trend_low = df['low'].iloc[-i]
-                if 0.015 < (trend_high - trend_low) / trend_low < 0.05:
-                    EP = (trend_high - trend_low) * 0.382 + trend_low
-                    SL = (trend_high - trend_low) * 0.17 + trend_low
-                    TP = (trend_high - trend_low) * 1.272 + trend_low
+                if 0.015 < (trend_high - trend_low) / trend_low < 0.06:
+                    EP = (trend_high - trend_low) * 0.5 + trend_low
+                    TP = (trend_high - trend_low) * -0.17 + trend_low
+                    SL = (trend_high - trend_low) * 0.618 + trend_low
                     sr_count = 0
-                    for j in range(4, i):
-                        window_small_low = df['low'].iloc[-j - 4:-j + 4 + 1].min() # Make sure this works as desired
-                        window_small_high = df['high'].iloc[-j - 4:-j + 4 + 1].max()
-                        if EP * (1 + 0.0007) > df['low'].iloc[-j] > EP * (1 - 0.0007) and \
+                    for j in range(5, i):
+                        window_small_low = df['low'].iloc[-j - 5:-j + 5 + 1].min() # Make sure this works as desired
+                        window_small_high = df['high'].iloc[-j - 5:-j + 5 + 1].max()
+                        if EP * (1 + 0.001) > df['low'].iloc[-j] > EP * (1 - 0.001) and \
                                 df['low'].iloc[-j] == window_small_low:
                             sr_count += 1
-                        if EP * (1 + 0.0007) > df['high'].iloc[-j] > EP * (1 - 0.0007) and \
+                        if EP * (1 + 0.001) > df['high'].iloc[-j] > EP * (1 - 0.001) and \
                                 df['high'].iloc[-j] == window_small_high:
                             sr_count += 1
                     # print(self.SR)
                     for sr in SR:
-                        if EP * (1 + 0.001) > sr > EP * (1 - 0.001):
+                        if EP * (1 + 0.002) > sr > EP * (1 - 0.002):
                             sr_count += 1
-                    if sr_count >= 2: # and (self.ema200 > self.SL or self.ema_200_check):
+                    if sr_count >= 1: # and (self.ema200 > self.SL or self.ema_200_check):
                         print("passed 3 long")
+                        print(f'High: {trend_high} Low: {trend_low} EP: {EP} TP: {TP} SL: {SL}')
                         for fvg in FVGs:
-                            if SL < fvg[3] < EP:
+                            if SL > fvg[3]:
                                 print("passed 4 long")
-                                # print(f"E: {self.EP}, TP: {self.TP}, SL: {self.SL}, High: {self.trend_high}, Low: {self.trend_low}")
-                                # Calculate Entry, L1, and L2 position size so L1 avg cost is at 0.441 and L2 at 0.29
-                                # 35% Account risk on 50x leverage
-                                Entry_size = risk / (EP - SL)
-                                # Check to see if we are in the time range. If so, store the order instead of placing it
-                                # if (dt.time(0, 0) <= current_time and current_time < dt.time(9, 0)):
-                                # self.stored_trade = (
-                                # 'buy', self.EP, self.Entry_size, self.TP, self.SL)
-                                # print("Long trade setup stored")
-                                # else:
-                                # self.Entry = self.buy(exectype=bt.Order.Limit, price=self.EP,
-                                #                       size=self.Entry_size)
-                                # print("Long Order placed")
-                                type = 'buy'
+                                Entry_size = risk / (SL - EP)
+                                type = 'sell'
                                 Entry = place_orders([EP, TP, SL], Entry_size, type, symbol)
                                 return Entry, type, trend_high
 
@@ -128,59 +116,50 @@ def check_for_trades(df, SR, FVGs, risk, type, trend):
         print("passed 1 short")
         trend_low = df['low'].iloc[-1]
         # Find most recent support for the low
-        for i in range(6, 48):
+        for i in range(6, 83):
             window_high = df['high'].iloc[-i - 8:-i + 8 + 1].max()
             if df['high'].iloc[-i] == window_high:
                 print("passed 2 short")
                 trend_high = df['high'].iloc[-i]
                 # if not (self.rsi < self.prev_rsi < 70):
-                if 0.015 < (trend_high - trend_low) / trend_high < 0.05:
-                    EP = (trend_low - trend_high) * 0.382 + trend_high
-                    SL = (trend_low - trend_high) * 0.17 + trend_high
-                    TP = (trend_low - trend_high) * 1.272 + trend_high
+                if 0.015 < (trend_high - trend_low) / trend_high < 0.06:
+                    EP = (trend_low - trend_high) * 0.5 + trend_high
+                    TP = (trend_low - trend_high) * -0.17 + trend_high
+                    SL = (trend_low - trend_high) * 0.618 + trend_high
                     sr_count = 0
-                    for j in range(4, i):
-                        window_small_low = df['low'].iloc[-j - 4:-j + 4 + 1].min() # Make sure this works as desired
-                        window_small_high = df['high'].iloc[-j - 4:-j + 4 + 1].max()
-                        if EP * (1 + 0.0007) > df['low'].iloc[-j] > EP * (1 - 0.0007) and df['low'].iloc[-j] == window_small_low:
+                    for j in range(5, i):
+                        window_small_low = df['low'].iloc[-j - 5:-j + 5 + 1].min() # Make sure this works as desired
+                        window_small_high = df['high'].iloc[-j - 5:-j + 5 + 1].max()
+                        if (EP * (1 + 0.001) > df['low'].iloc[-j] > EP * (1 - 0.001)
+                                and df['low'].iloc[-j] == window_small_low):
                             sr_count += 1
-                        if EP * (1 + 0.0007) > df['high'].iloc[-j] > EP * (1 - 0.0007) and df['high'].iloc[-j] == window_small_high:
+                        if (EP * (1 + 0.001) > df['high'].iloc[-j] > EP * (1 - 0.001)
+                                and df['high'].iloc[-j] == window_small_high):
                             sr_count += 1
                     # print(self.SR)
                     for sr in SR:
-                        if EP * (1 + 0.001) > sr > EP * (1 - 0.001):
+                        if EP * (1 + 0.002) > sr > EP * (1 - 0.002):
                             sr_count += 1
-                    if sr_count >= 2: #(self.ema200 < self.SL or self.ema_200_check):
+                    if sr_count >= 1: #(self.ema200 < self.SL or self.ema_200_check):
                         print("passed 3 short")
+                        print(f'High: {trend_high} Low: {trend_low} EP: {EP} TP: {TP} SL: {SL}')
                         for fvg in FVGs:
-                            if SL < fvg[3] < EP:
+                            if SL < fvg[3]:
                                 print("passed 4 short")
-                                # print(f"E: {self.EP}, TP: {self.TP}, SL: {self.SL}, High: {self.trend_high}, Low: {self.trend_low}")
-                                # Calculate Entry, L1, and L2 position size so L1 avg cost is at 0.441 and L2 at 0.29
-                                # 35% Account risk on 50x leverage
-                                Entry_size = risk / (SL - EP)
-                                # Check to see if we are in the time range. If so, store the order instead of placing it
-                                # if (dt.time(0, 0) <= current_time and current_time < dt.time(9, 0)):
-                                # self.stored_trade = (
-                                # 'buy', self.EP, self.Entry_size, self.TP, self.SL)
-                                # print("Long trade setup stored")
-                                # else:
-                                # self.Entry = self.buy(exectype=bt.Order.Limit, price=self.EP,
-                                #                       size=self.Entry_size)
-                                # print("Long Order placed")
-                                type = 'sell'
+                                Entry_size = risk / (EP - SL)
+                                type = 'buy'
                                 Entry = place_orders([EP, TP, SL], Entry_size, type, symbol)
                                 return Entry, type, trend_low
     return None, type, trend
 
 
-def check_for_new_high(type, trend, Entry):
-    if type == 'buy':
+def check_for_new_high(symbol, df, type, trend, Entry):
+    if type == 'sell':
         if Entry is not None:
             if df.high.iloc[-1] > trend:
                 print("New High")
                 return reset_orders(symbol)
-    if type == 'sell':
+    if type == 'buy':
         if Entry is not None:
             if df.low.iloc[-1] < trend:
                 print("New Low")
@@ -214,6 +193,16 @@ def fetch_historical_data(symbol):
     df['datetime'] = pd.to_datetime(df['datetime'], unit='ms')
     return df, df15, df1h
 
+
+def end_trade(symbol, prev_size, accountSize):
+    profit = accountSize-prev_size
+    date = dt.datetime.now()
+    if profit > 0:
+        win = 'WIN'
+    else:
+        win = 'LOSS'
+    with open('TCLM_log.txt', 'w') as file:
+        file.write(f'{date}   {symbol}   {win}  PnL: ${profit}')
 
 def add_EMAs(df):
     df['EMA_20'] = df['close'].ewm(span=20, adjust=False).mean()
@@ -256,7 +245,7 @@ def check_historical_trades(symbol, risk_amount):
                     print("New Low")
                     stored_prices = []
                     stored_sizes = []
-        Entry, type, trend = check_for_trades(df, SR, FVGs, risk_amount, type, trend)
+        Entry, type, trend = check_for_trades(symbol, df, SR, FVGs, risk_amount, type, trend)
         # print(prices)
         # print(type)
         if len(prices) > 0:
@@ -271,7 +260,7 @@ def trade_completion_check(stored_prices, trade_check, type, df):
     pass
 # Error Handling
 # Check if there are orders/positions on startup
-if __name__ == '__main__':
+def main():
     # Replace with your API keys
     api_key, secret = getSubKey()
     exchange = ccxt.phemex({
@@ -290,11 +279,12 @@ if __name__ == '__main__':
     EP = 0
     risk_amount = 5
     trend = 0
+    prev_size = 0
     type = 'buy'
     for symbol in symbols:
         exchange.set_position_mode(hedged=False, symbol=symbol)
         exchange.set_leverage(-50, symbol)
-        # reset_orders(symbol)
+        reset_orders(symbol)
     """for i in range(len(symbols)):
         symbol = symbols_queue.popleft()
         symbols_queue.append(symbol)
@@ -312,21 +302,38 @@ if __name__ == '__main__':
         df, df15, df1h = fetch_historical_data(symbol)
         df = add_EMAs(df)
         FVGs = find_fair_value_gaps(df1h)
+        print(FVGs)
         SR = find_support_resistance(df15, 3)
         current_time = dt.datetime.now().time()
         print(symbol)
         print(current_time)
-        # bal = exchange.fetch_balance()
-        # accountSize = bal['info']['data']['account']['accountBalanceRv']
+        bal = exchange.fetch_balance()
+        accountSize = bal['info']['data']['account']['accountBalanceRv']
         pos_size = exchange.fetch_positions([symbol])[0]['info']['size']
         if pos_size == '0':
+            if in_position:
+                end_trade(symbol, prev_size, accountSize)
             if Entry is not None:
-                Entry = check_for_new_high(type, trend, Entry)
+                Entry = check_for_new_high(symbol, df, type, trend, Entry)
+                if len(exchange.fetch_open_orders(symbol)) < 1:
+                    Entry = None
             if Entry is None:
-                Entry, type, trend = check_for_trades(df, SR, FVGs, risk_amount, type, trend)
+                Entry, type, trend = check_for_trades(symbol, df, SR, FVGs, risk_amount, type, trend)
+                prev_size = accountSize
+        else:
+            in_position = True
+        if Entry is None:
             symbols_queue.appendleft(symbol)
-            print(symbols_queue)
         else:
             symbols_queue.append(symbol)
+        print(symbols_queue)
         print("waiting 20 seconds")
         time.sleep(20)
+
+if __name__ == '__main__':
+    while True:
+        try:
+            main()
+        except Exception as e:
+            print(e)
+            time.sleep(30)
