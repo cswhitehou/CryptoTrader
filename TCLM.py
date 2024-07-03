@@ -46,11 +46,11 @@ class TCLMax(bt.Strategy):
     params = (
         ('ema_check_param', False),
         ('rolling_period', 48),
-        ('too_steep', 0.04),
-        ('steep_candles', 16),
+        ('too_steep', 0.06),
+        ('steep_candles', 20),
         ('min_range', 0.04),
-        ('max_range', 0.1),
-        ('established_low', 52),
+        ('max_range', 0.11),
+        ('established_low', 54),
         ('data_name', ''),
     )
     # __init__ initializes all the variables to be used in the strategy when the strategy is loaded
@@ -100,6 +100,7 @@ class TCLMax(bt.Strategy):
         self.L1_hit = 0
         self.L2_hit = 0
         self.SL_hit = 0
+        self.count = 0
     # notify_trade is called whenever changes are made to the trade
     def notify_trade(self, trade):
         # check if the trade has been closed and print results
@@ -114,6 +115,7 @@ class TCLMax(bt.Strategy):
                 self.buy()
             # Clear and reset orders
             self.accountSize += trade.pnl
+            # print(self.accountSize)
             self.total_trades += 1
             if trade.pnl > 0:
                 self.winning_trades += 1
@@ -140,6 +142,12 @@ class TCLMax(bt.Strategy):
     # notify_order is triggered whenever a change to an order has been made
     def notify_order(self, order):
         # LONG
+        """if self.count > 440:
+            print(order)
+        if order.status in [order.Created, order.Accepted]:
+            if self.count == 443:
+                self.cancel(order)
+            self.count += 1"""
         if self.dir == 1:
             # Check if the order was completed
             if order.status in [order.Completed]:
@@ -451,7 +459,7 @@ class TCLMax(bt.Strategy):
         initial_value = 10000000  # Assuming initial cash is 10,000
         profit = final_value - initial_value
         print(f"Entry wins: {Entry_wins}, L1 wins: {L1_wins}, L2 wins: {L2_wins}, Losses: {Losing_trades}, Profit: {profit}")
-        with open('TCLM_strategy_results.csv', mode='a', newline='') as file:
+        with open('new_TCLM_strategy_results.csv', mode='a', newline='') as file:
             writer = csv.writer(file)
             writer.writerow([self.params.data_name, self.params.rolling_period,self.params.too_steep,self.params.steep_candles,self.params.min_range,self.params.max_range,
                             self.params.established_low,self.params.ema_check_param, self.total_trades, self.winning_trades, Losing_trades, L1_wins, L2_wins, Entry_wins,
@@ -495,8 +503,8 @@ if __name__ == '__main__':
     # print(df)
     # print(df15)
     # print(df1)
-    data_files = ['data_5min/ada_usd_5min_data.csv', 'data_5min/apt_usd_5min_data.csv', 'data_5min/atom_usd_5min_data.csv', 'data_5min/avax_usd_5min_data.csv', 'data_5min/dot_usd_5min_data.csv', 'data_5min/ltc_usd_5min_data.csv', 'data_5min/matic_usd_5min_data.csv', 'data_5min/link_usd_5min_data.csv',
-                  'data_5min/sol_usd_5min_data.csv']
+    data_files = ['data_5min/dot_usd_5min_data2.csv', 'data_5min/matic_usd_5min_data2.csv', 'data_5min/link_usd_5min_data2.csv', 'data_5min/ada_usd_5min_data2.csv', 'data_5min/atom_usd_5min_data4.csv',
+                  'data_5min/sol_usd_5min_data2.csv', 'data_5min/xrp_usd_5min_data4.csv', 'data_5min/apt_usd_5min_data2.csv']
     cerebro = bt.Cerebro()
     # Load the data
     for data_file in data_files:
@@ -507,9 +515,9 @@ if __name__ == '__main__':
             compression=5,
             timeframe=bt.TimeFrame.Minutes,
             datetime=0,
-            high=1,
-            low=2,
-            open=3,
+            open=1,
+            high=2,
+            low=3,
             close=4,
             volume=5,
             openinterest=-1
@@ -518,13 +526,13 @@ if __name__ == '__main__':
         cerebro.adddata(data)
         cerebro.optstrategy(
             TCLMax,
-            ema_check_param=[True, False],
-            rolling_period=[24, 30, 36],
-            too_steep=[0.045, 0.06],
-            steep_candles=[15, 20],
+            ema_check_param=[False],
+            rolling_period=[30, 36],
+            too_steep=[0.055],
+            steep_candles=[16],
             min_range=[0.04],
-            max_range=[0.08, 0.105],
-            established_low=[40, 47, 54],
+            max_range=[0.08, 0.09],
+            established_low=[40],
             data_name=[data_file],
         )
         cerebro.broker.setcash(cash)
@@ -533,11 +541,10 @@ if __name__ == '__main__':
         cerebro.addsizer(bt.sizers.PercentSizer, percents=risk)
         cerebro.addanalyzer(bt.analyzers.AnnualReturn, _name="areturn")
         teststrat = cerebro.run(maxcpus=8)
-    # cerebro.plot(style='candlestick', volume=False, grid=True, subplot=True)
     # print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
     # print(teststrat[0].analyzers.areturn.get_analysis())
 
-    filename = 'TCLM_strategy_results.csv'
+    filename = 'new_TCLM_strategy_results.csv'
     data = load_csv_to_list(filename)
 
     # Sort data by the last element (win percentage)

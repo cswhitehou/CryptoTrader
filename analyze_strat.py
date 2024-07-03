@@ -8,7 +8,9 @@ def load_csv_to_list(filename):
     return data
 
 def sort_data_by_last_element(data):
-    return sorted(data, key=lambda x: float(x[-1]))
+    # return sorted(data, key=lambda x: ((x[1]),(x[2]),(x[3]),(x[4]),(x[5]),(x[6]),(x[7]),(x[0])))
+    return sorted(data, key=lambda x: (x[0],float(x[-1])))
+
 
 def print_sorted_data(data):
     for row in data:
@@ -16,7 +18,7 @@ def print_sorted_data(data):
 
 if __name__ == '__main__':
     # Load CSV data into a list of lists
-    filename = 'TCLM_strategy_results.csv'
+    filename = 'X1_strategy_results.csv'
     data = load_csv_to_list(filename)
 
     # Sort data by the last element (win percentage)
