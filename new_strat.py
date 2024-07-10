@@ -90,9 +90,9 @@ class X1(bt.Strategy):
             # print(f"Current position size: {current_position_size}")
             # Make sure no order got double triggered
             if current_position_size > 0:
-                self.sell()
+                self.sell(size=abs(current_position_size))
             elif current_position_size < 0:
-                self.buy()
+                self.buy(size=abs(current_position_size))
             self.accountSize+=trade.pnl
             # Clear and reset orders
             self.cancel_all_orders()
@@ -275,11 +275,11 @@ if __name__ == '__main__':
         # Choose the parameters
         cerebro.optstrategy(
             X1,
-            bollinger_period=[12, 20, 29],
+            bollinger_period=[20],
             bollinger_devfactor=[1.5, 2, 3],
             macd1=[12],
             macd2=[26],
-            macdsig=[9, 19, 30],
+            macdsig=[30],
             rsi_period=[7, 11, 15],
             SL_max=[1],
             min_range=[0.001],
