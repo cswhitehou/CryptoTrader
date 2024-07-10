@@ -16,15 +16,24 @@ class X1(bt.Strategy):
         ('macd1', 98),  # Fast length
         ('macd2', 99),  # Slow length
         ('macdsig', 30),  # Smoothing length
+        ('min_range', 0.001),
+        ('SL_max', 0.01),
+        ('max_range', 0.5),
+        ('ema_multi', 1),
+        ('bars', 100),
         ('rsi_period', 7),  # RSI period
+        ('loss_streak', 2),  # Max Loss streak in a single direction before switching
         ('SL_range', 0.005),  # Where to put the candle based on the low/high
-        ('win_multi', 1.5),  # RR ratio
-        ('rsi_break', 5),  # How far the RSI has to break above 80/below 20
-        ('rolling_range', 5),  # How far back to check for the low candle
+        ('win_multi', 2.5),  # RR ratio
+        ('rsi_break', 3),  # How far the RSI has to break above 80/below 20
+        ('rolling_range', 11),  # How far back to check for the low candle
     )
     # __init__ initializes all the variables to be used in the strategy when the strategy is loaded
     def __init__(self):
         # Initialize all the values
+        self.ema20 = bt.ind.EMA(period=20)
+        self.ema50 = bt.ind.EMA(period=50)
+        self.ema200 = bt.ind.EMA(period=200)
         self.ready_for_trade = 0
         self.ohlc4 = (self.data.open + self.data.high + self.data.low + self.data.close) / 4
         self.rolling_high = bt.indicators.Highest(self.data.close, period=self.params.rolling_range)
@@ -40,7 +49,11 @@ class X1(bt.Strategy):
         self.accountSize = 1000
         self.total_trades = 0
         self.winning_trades = 0
-        self.rsi = bt.indicators.RSI(self.ohlc4, period=self.params.rsi_period)
+        self.consecutive_losses = 0
+        self.lined_up_trades = 0
+        self.ema_lineup = False
+        self.past_bars = 0
+        self.rsi = bt.indicators.RSI(self.data.close, period=self.params.rsi_period)
         # Bollinger Bands
         self.boll = bt.indicators.BollingerBands(
             self.data.close,
@@ -50,7 +63,7 @@ class X1(bt.Strategy):
 
         # MACD
         self.macd = bt.indicators.MACDHisto(
-            self.ohlc4,
+            self.data.close,
             period_me1=98,
             period_me2=99,
             period_signal=30,
@@ -90,17 +103,26 @@ class X1(bt.Strategy):
         if order.status in [order.Completed]:
             if order == self.StopLoss:
                 # print(f"STOP LOSS order executed, Price: {order.executed.price}, Size: {order.executed.size}")
+                if abs(self.consecutive_losses) >= self.params.loss_streak:
+                    self.consecutive_losses = 0
                 self.total_trades += 1
                 self.cancel_all_orders()
                 self.clear_order_references()
                 self.ready_for_trade = 0
+                if self.dir == 1:
+                    self.consecutive_losses += 1
+                elif self.dir == 0:
+                    self.consecutive_losses -= 1
             elif order == self.TakeProfit:
                 # print(f"TAKE PROFIT order executed, Price: {order.executed.price}, Size: {order.executed.size}")
+                if self.ema_lineup:
+                    self.lined_up_trades += 1
                 self.total_trades += 1
                 self.winning_trades += 1
                 self.cancel_all_orders()
                 self.clear_order_references()
                 self.ready_for_trade = 0
+                self.consecutive_losses = 0
             # else:
                 # print(f"Order executed, Price: {order.executed.price}, Size: {order.executed.size}")
 
@@ -116,9 +138,19 @@ class X1(bt.Strategy):
             if self.ready_for_trade == 1:
                 if self.rsi > 80 + self.params.rsi_break:
                     self.ready_for_trade = 3
+                    self.past_bars = 0
+                else:
+                    self.past_bars += 1
+                    if self.past_bars > self.params.bars:
+                        self.ready_for_trade = 0
             elif self.ready_for_trade == 2:
                 if self.rsi < 20 - self.params.rsi_break:
                     self.ready_for_trade = 4
+                    self.past_bars = 0
+                else:
+                    self.past_bars += 1
+                    if self.past_bars > self.params.bars:
+                        self.ready_for_trade = 0
             # Check for RSI back in normal range and switch from dark to light ONLY IF RSI has been broken
             # SHORT
             elif self.ready_for_trade == 3:
@@ -127,16 +159,27 @@ class X1(bt.Strategy):
                     if self.macd.lines.histo[-1] < self.macd.lines.histo[-2]:
                         self.ready_for_trade = 0
                     else:
-                        self.SL = self.rolling_high * (1 + self.params.SL_range)
                         self.EP = self.data.close[0]
-                        if abs(self.SL - self.EP)/self.EP < 0.001:  # Check if the range is too small
+                        self.SL = min([self.rolling_high * (1 + self.params.SL_range), self.EP* (1+self.params.SL_max)])
+                        if self.params.max_range < abs(self.SL - self.EP)/self.EP or abs(self.SL - self.EP)/self.EP < self.params.min_range:  # Check if the range is too small
                             self.ready_for_trade = 0
                         else:
-                            self.TP = (self.EP-self.SL)*self.params.win_multi + self.EP
+                            if self.EP < self.ema200:
+                                self.TP = (self.EP-self.SL)*self.params.win_multi*self.params.ema_multi + self.EP
+                                self.ema_lineup = True
+                            else:
+                                self.TP = (self.EP-self.SL)*self.params.win_multi + self.EP
+                                self.ema_lineup = False
                             self.Entry_size = 25/(self.SL-self.EP)
                             self.Entry = self.sell(size=self.Entry_size, exectype=bt.Order.Market)
                             self.StopLoss = self.buy(exectype=bt.Order.Stop, size=self.Entry_size, price=self.SL)
                             self.TakeProfit = self.buy(exectype=bt.Order.Limit, size=self.Entry_size, price=self.TP)
+                            self.dir = 1
+                            self.past_bars = 0
+                else:
+                    self.past_bars += 1
+                    if self.past_bars > self.params.bars:
+                        self.ready_for_trade = 0
             # LONG
             elif self.ready_for_trade == 4:
                 if 0 > self.macd.lines.histo[0] > self.macd.lines.histo[-1] and self.rsi > 20:
@@ -144,22 +187,36 @@ class X1(bt.Strategy):
                     if self.macd.lines.histo[-1] > self.macd.lines.histo[-2]:
                         self.ready_for_trade = 0
                     else:
-                        self.SL = self.rolling_low * (1 - self.params.SL_range)
                         self.EP = self.data.close[0]
-                        if abs(self.SL - self.EP)/self.SL < 0.001:  # Check if the range is too small
+                        self.SL = max([self.rolling_low * (1 - self.params.SL_range), self.EP*(1-self.params.SL_max)])
+                        # print(f'EP: {self.EP}, SL: {self.SL}')
+                        if self.params.max_range < abs(self.SL - self.EP)/self.SL or abs(self.SL - self.EP)/self.SL < self.params.min_range:  # Check if the range is too small
                             self.ready_for_trade = 0
                         else:
-                            self.TP = (self.EP-self.SL)*self.params.win_multi + self.EP
+                            if self.EP > self.ema200:
+                                self.TP = (self.EP-self.SL)*self.params.win_multi*self.params.ema_multi + self.EP
+                                self.ema_lineup = True
+                            else:
+                                self.TP = (self.EP-self.SL)*self.params.win_multi + self.EP
+                                self.ema_lineup = False
                             self.Entry_size = 25/(self.EP-self.SL)
                             self.Entry = self.buy(size=self.Entry_size, exectype=bt.Order.Market)
                             self.StopLoss = self.sell(exectype=bt.Order.Stop, size=self.Entry_size, price=self.SL)
                             self.TakeProfit = self.sell(exectype=bt.Order.Limit, size=self.Entry_size, price=self.TP)
+                            self.dir = 0
+                            self.past_bars = 0
+                else:
+                    self.past_bars += 1
+                    if self.past_bars > self.params.bars:
+                        self.ready_for_trade = 0
             # Check if BB has been pushed into
             if self.ready_for_trade == 0:
-                if self.data.high[0] >= self.boll.lines.top:
+                if self.data.high[0] >= self.boll.lines.top and self.consecutive_losses < self.params.loss_streak:
                     self.ready_for_trade = 1
-                elif self.data.low[0] <= self.boll.lines.bot:
+                    self.past_bars = 0
+                elif self.data.low[0] <= self.boll.lines.bot and (-1 * self.consecutive_losses) < self.params.loss_streak:
                     self.ready_for_trade = 2
+                    self.past_bars = 0
 
     # This function is called at the end of every strategy and records the parameters and results in a csv
     def stop(self):
@@ -167,14 +224,21 @@ class X1(bt.Strategy):
         print(f'Total Trades: {self.total_trades}')
         print(f'Winning Trades: {self.winning_trades}')
         print(f'Winning Percentage: {win_percentage:.2f}%')
-        profit = self.winning_trades * 25 * self.params.win_multi - (self.total_trades-self.winning_trades) * 25
+        expected_win_percentage = 1/(1+self.params.win_multi) * 100 if self.total_trades > 0 else 0
+        print(f'Expected Winning Percentage: {expected_win_percentage:.2f}%')
+        edge = win_percentage - expected_win_percentage
+        print(f'Edge on Market: {edge:.2f}%')
+        profit = self.winning_trades * 25 * self.params.win_multi - (self.total_trades-self.winning_trades) * 25 + self.lined_up_trades * 25 * (self.params.ema_multi-1)
         print(f'Profit: ${profit}')
         with open('X1_strategy_results.csv', mode='a', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow([self.params.data_name, self.params.bollinger_devfactor,self.params.rsi_period,
+            writer.writerow([self.params.data_name, self.params.bollinger_period, self.params.bollinger_devfactor,
+                             self.params.macd1, self.params.macd2, self.params.macdsig, self.params.rsi_period,
+                             self.params.SL_max, self.params.max_range,
                              self.params.SL_range, self.params.win_multi, self.params.rsi_break, self.params.rolling_range,
-                            self.total_trades, self.winning_trades,
-                             win_percentage, profit])
+                            self.total_trades, self.winning_trades, self.lined_up_trades, expected_win_percentage,
+                             win_percentage, edge, profit])
+
 
 if __name__ == '__main__':
     # Create variable
@@ -183,11 +247,14 @@ if __name__ == '__main__':
     cash = 10000000.0
     risk = 5
 
+    # Check for EMAs in line
     # Call cerebro to run the backtest
     # List of all the files
-    data_files = ['data_5min/matic_usd_1min_data.csv',  'data_5min/ada_usd_1min_data.csv',  'data_5min/atom_usd_1min_data.csv',
-                  'data_5min/apt_usd_1min_data.csv',  'data_5min/dot_usd_1min_data.csv', 'data_5min/link_usd_1min_data.csv',
-                  'data_5min/xrp_usd_1min_data.csv', 'data_5min/sol_usd_1min_data.csv']
+    data_files = ['data_5min/apt_usd_1min_data2.csv', 'data_5min/matic_usd_1min_data.csv', 'data_5min/sol_usd_1min_data.csv',  'data_5min/ada_usd_1min_data.csv',  'data_5min/atom_usd_1min_data.csv',
+                  'data_5min/dot_usd_1min_data.csv', 'data_5min/link_usd_1min_data.csv',
+                  'data_5min/xrp_usd_1min_data.csv']
+    # data_files = ['data_5min/matic_usd_1min_data.csv', 'data_5min/apt_usd_1min_data.csv',
+    #               'data_5min/sol_usd_1min_data.csv']
 
     for data_file in data_files:
         data = btfeeds.GenericCSVData(
@@ -208,18 +275,25 @@ if __name__ == '__main__':
         # Choose the parameters
         cerebro.optstrategy(
             X1,
-            bollinger_period=[20],
-            bollinger_devfactor=[2],
-            macd1=[98],
-            macd2=[99],
-            macdsig=[30],
-            rsi_period=[7],
-            SL_range=[0.0002, 0.0005, 0.001, 0.005],
+            bollinger_period=[12, 20, 29],
+            bollinger_devfactor=[1.5, 2, 3],
+            macd1=[12],
+            macd2=[26],
+            macdsig=[9, 19, 30],
+            rsi_period=[7, 11, 15],
+            SL_max=[1],
+            min_range=[0.001],
+            ema_multi=[1],
+            bars=[100],
+            max_range=[0.5],
+            loss_streak=[100],
+            SL_range=[0.005],
             win_multi=[1.5, 2.5],
-            rsi_break=[0,3,5,7],
-            rolling_range=[5,7,9],
+            rsi_break=[3],
+            rolling_range=[14],
             data_name=[data_file],
         )
+        # cerebro.addstrategy(X1)
         cerebro.broker.setcash(cash)
         cerebro.broker.set_slippage_perc(0.0001)
         cerebro.broker.setcommission(commission=0.000)

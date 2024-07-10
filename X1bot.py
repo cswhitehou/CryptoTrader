@@ -7,8 +7,8 @@ import ccxt
 import datetime as dt
 from collections import deque
 
-api_key =
-secret =
+api_key = '55d0904d-6270-475d-98a1-c99b0d9413da'
+secret = 'KUPMfNVJxjA_A-IIDiGmG5c8RECraTiLfjijsqS2FJQ3MjUzMzNlNy04OWRmLTRmMGQtOWZhMS1kNTUwYzQzZjJkOWE'
 exchange = ccxt.phemex({
     'apiKey': api_key,
     'secret': secret,
@@ -121,19 +121,19 @@ def end_trade(symbol, prev_size, accountSize):
 
 def add_EMAs(df):
     df['ohlc4'] = (df['open']+df['high']+df['low']+df['close'])/4
-    df['rsi'] = ta.rsi(df['ohlc4'], length=7)
+    df['rsi'] = ta.rsi(df['close'], length=7)
 
     # Calculate Bollinger Bands
     bb = ta.bbands(df['close'], length=20, std=2)
     df = df.join(bb)
 
     # Calculate MACD
-    macd = ta.macd(df['ohlc4'], fast=98, slow=99, signal=30)
+    macd = ta.macd(df['close'], fast=98, slow=99, signal=30)
     df = df.join(macd)
 
     # Print the latest values
-    df['rolling_high'] = df['close'].rolling(window=11).max()
-    df['rolling_low'] = df['close'].rolling(window=11).min()
+    df['rolling_high'] = df['close'].rolling(window=14).max()
+    df['rolling_low'] = df['close'].rolling(window=14).min()
     return df
 
 def check_for_entry(orders, all_orders, EP, L1, Entry_size, type, symbol):
@@ -168,15 +168,16 @@ def check_past_data(symbol):
 # Check if there are orders/positions on startup
 def main():
     # Replace with your API keys
-    api_key =
-    secret =
+    api_key = '55d0904d-6270-475d-98a1-c99b0d9413da'
+    secret = 'KUPMfNVJxjA_A-IIDiGmG5c8RECraTiLfjijsqS2FJQ3MjUzMzNlNy04OWRmLTRmMGQtOWZhMS1kNTUwYzQzZjJkOWE'
     exchange = ccxt.phemex({
         'apiKey': api_key,
         'secret': secret,
         'options': {'defaultType': 'swap'}
     })
-    symbols = ['SOL/USDT:USDT', 'MATIC/USDT:USDT', 'APT/USDT:USDT']
-    symbols_queue = deque(symbols)
+    # symbols = ['SOL/USDT:USDT', 'MATIC/USDT:USDT', 'APT/USDT:USDT']
+    # symbols_queue = deque(symbols)
+    symbol = 'SOL/USDT:USDT'
     compound = False
     Entry = None
     in_position = False
@@ -190,12 +191,13 @@ def main():
     ready_for_trade = 0
     prev_size = 0
     type = 'buy'
-    for symbol in symbols:
-        exchange.set_position_mode(hedged=False, symbol=symbol)
-        exchange.set_leverage(20, symbol)
+    #for symbol in symbols:
+    exchange.set_position_mode(hedged=False, symbol=symbol)
+    exchange.set_leverage(20, symbol)
+    ready_for_trade = check_past_data(symbol)
         # reset_orders(symbol)
     while True:
-        symbol = symbols_queue.pop()
+        # symbol = symbols_queue.pop()
         df = fetch_historical_data(symbol)
         df = add_EMAs(df)
         current_time = dt.datetime.now().time()
@@ -213,10 +215,10 @@ def main():
                 prev_size = accountSize
         else:
             in_position = True
-        if ready_for_trade == 0:
-            symbols_queue.appendleft(symbol)
-        else:
-            symbols_queue.append(symbol)
+        #if ready_for_trade == 0:
+            #symbols_queue.appendleft(symbol)
+        #else:
+            #symbols_queue.append(symbol)
         print(ready_for_trade)
         print(symbols_queue)
         print("waiting 5 seconds")
