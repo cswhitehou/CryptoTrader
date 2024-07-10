@@ -178,10 +178,8 @@ class TC1(bt.Strategy):
         """for fvg in self.FVGs:
             if self.data.high[0] > fvg[2] and fvg[4] == 'bearish':
                 self.FVGs.remove(fvg)
-                print(f'{fvg} filled')
             elif self.data.low[0] < fvg[2] and fvg[4] == 'bullish':
-                self.FVGs.remove(fvg)
-                print(f'{fvg} filled')"""
+                self.FVGs.remove(fvg)"""
         current_date = self.data.datetime.datetime(0)  # Get the current date from the data feed
         # Check if any of the FVGs are too old
         lookback_date = current_date - timedelta(days=self.params.FVG_days_param)
@@ -333,9 +331,9 @@ if __name__ == '__main__':
     # Call cerebro to run the backtest
     cerebro = bt.Cerebro()
     # List of all the files
-    # data_files = ['data_5min/dot_usd_5min_data4.csv', 'data_5min/link_usd_5min_data4.csv', 'data_5min/ada_usd_5min_data4.csv', 'data_5min/atom_usd_5min_data4.csv',
-    #               'data_5min/sol_usd_5min_data4.csv', 'data_5min/xrp_usd_5min_data4.csv', 'data_5min/matic_usd_5min_data4.csv', 'data_5min/apt_usd_5min_data2.csv']
-    data_files = ['data_5min/apt_usd_5min_data2.csv']
+    data_files = ['data_5min/dot_usd_5min_data4.csv', 'data_5min/link_usd_5min_data4.csv', 'data_5min/ada_usd_5min_data4.csv', 'data_5min/atom_usd_5min_data4.csv',
+                   'data_5min/sol_usd_5min_data4.csv', 'data_5min/xrp_usd_5min_data4.csv', 'data_5min/matic_usd_5min_data4.csv', 'data_5min/apt_usd_5min_data2.csv']
+
     for data_file in data_files:
         data = btfeeds.GenericCSVData(
             dataname=data_file,
@@ -357,18 +355,18 @@ if __name__ == '__main__':
             TC1,
             small_sr_param=[5],
             sr_window_param=[-13],
-            sr_req_param=[0],
-            min_size_param=[0.015, 0.025, 0.035],
-            max_size_param=[0.065],
-            prev_low_range_param=[81],
+            sr_req_param=[0,1,3],
+            min_size_param=[0.02, 0.03],
+            max_size_param=[0.045, 0.065],
+            prev_low_range_param=[40, 60, 80],
             low_candles_param=[8],
-            FVG_days_param=[0.5, 1, 2],
+            FVG_days_param=[0.25,1,3],
             SR_days_param=[12],
             SLPrice=[0.17],
-            sr_range_param=[0.001],
-            fvg_range_param=[0.002],
-            ema_check_param=[True],
-            ema_200_param=[True],
+            sr_range_param=[0.0007],
+            fvg_range_param=[0.001],
+            ema_check_param=[True, False],
+            ema_200_param=[True, False],
             data_name=[data_file],
         )
         # cerebro.addstrategy(TC1)
@@ -385,7 +383,7 @@ if __name__ == '__main__':
         # cerebro.plot(style='candlestick', volume=False, grid=True, subplot=True)
     # print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
     # print(results[0].analyzers.areturn.get_analysis())
-    filename = 'TC1_strategy_results2.csv'
+    filename = 'TC1_strategy_results.csv'
     data = load_csv_to_list(filename)
 
     # Sort data by the last element (win percentage)
