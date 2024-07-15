@@ -18,6 +18,10 @@ symbols = ['SOL/USDT:USDT', 'MATIC/USDT:USDT', 'APT/USDT:USDT']
 symbols_queue = deque(symbols)
 
 def place_orders(prices, size, type, symbol):
+    if type == 'buy':
+        multi = 0.9999
+    else:
+        multi = 1.0001
     try:
         order = exchange.create_order(symbol, 'market', side=type, amount=size, price=None, params={
             'stopLoss': {
@@ -25,15 +29,15 @@ def place_orders(prices, size, type, symbol):
                 'type': 'market',
             },
             'takeProfit': {
-                'triggerPrice': prices[1],
+                'triggerPrice': prices[1] * multi,
                 'type': 'limit',
                 'price': prices[1],
             },
         })
         print(f"Market order placed: {order['id']}")
         date = dt.datetime.now()
-        with open('X1_log.txt', 'w') as file:
-            file.write(f'{date}   {symbol}   EP: {prices[0]} SL: {prices[2]} TP: {prices[1]} Type: {type} Size: {size}')
+        with open('X1_log.txt', 'a') as file:
+            file.write(f'{date}   {symbol}   EP: {prices[0]} SL: {prices[2]} TP: {prices[1]} Type: {type} Size: {size}\n')
         return order
     except ccxt.BaseError as e:
         print(f"An error occurred: {str(e)}")
@@ -42,10 +46,10 @@ def place_orders(prices, size, type, symbol):
 
 def check_for_trades(symbol, df, risk, ready_for_trade):
     if ready_for_trade == 1:
-        if df['rsi'].iloc[-1] > 80 + 3:
+        if df['rsi'].iloc[-1] > 80 + 0:
             ready_for_trade = 3
     elif ready_for_trade == 2:
-        if df['rsi'].iloc[-1] < 20 - 3:
+        if df['rsi'].iloc[-1] < 20 - 0:
             ready_for_trade = 4
     elif ready_for_trade == 3:
         if 0 < df['MACDh_98_99_30'].iloc[-1] < df['MACDh_98_99_30'].iloc[-2] and df['rsi'].iloc[-1] < 80:
@@ -77,7 +81,7 @@ def check_for_trades(symbol, df, risk, ready_for_trade):
                     Entry_size = risk / (EP - SL)
                     place_orders([EP, TP, SL], Entry_size, 'buy', symbol)
                     ready_for_trade = 0
-    if ready_for_trade == 0:
+    if ready_for_trade < 3:
         if df['high'].iloc[-1] >= df['BBU_20_2.0'].iloc[-1]:
             ready_for_trade = 1
         elif df['low'].iloc[-1] <= df['BBL_20_2.0'].iloc[-1]:
@@ -115,13 +119,13 @@ def end_trade(symbol, prev_size, accountSize):
         win = 'WIN'
     else:
         win = 'LOSS'
-    with open('X1_log.txt', 'w') as file:
-        file.write(f'{date}   {symbol}   {win}  PnL: ${profit}')
+    with open('X1_log.txt', 'a') as file:
+        file.write(f'{date}   {symbol}   {win}  PnL: ${profit}\n')
     return check_past_data(symbol)
 
 def add_EMAs(df):
     df['ohlc4'] = (df['open']+df['high']+df['low']+df['close'])/4
-    df['rsi'] = ta.rsi(df['close'], length=7)
+    df['rsi'] = ta.rsi(df['close'], length=14)
 
     # Calculate Bollinger Bands
     bb = ta.bbands(df['close'], length=20, std=2)
