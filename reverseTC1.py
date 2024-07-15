@@ -51,6 +51,7 @@ class ReverseTC1(bt.Strategy):
         self.ema20 = bt.ind.EMA(period=20)
         self.ema50 = bt.ind.EMA(period=50)
         self.ema200 = bt.ind.EMA(period=200)
+        self.ema600 = bt.ind.EMA(period=600)
         self.rolling_high = bt.indicators.Highest(self.data.high, period=12*4)
         self.rolling_low = bt.indicators.Lowest(self.data.low, period=12*4)
         self.trend_low = 0
@@ -170,6 +171,9 @@ class ReverseTC1(bt.Strategy):
                 self.FVGs.remove(date)
                 # print(f'{date} removed from S/R')
 
+    # Check for Hammer Candles
+    # RSI Divergence
+
     # Next is the main logic of the strategy and is called on with each new candle
     # To enter:
     # 1. New High
@@ -201,7 +205,7 @@ class ReverseTC1(bt.Strategy):
                         self.clear_order_references()
             # To enter:
             # SHORT
-            elif self.data.high[0] == self.rolling_high:
+            elif self.data.high[0] == self.rolling_high and self.data.high[0] - max([self.data.close[0], self.data.open[0]]) > (max([self.data.close[0], self.data.open[0]]) - self.data.low[0]): # Hammer Candle
                 self.trend_high = self.data.high[0]
                 # Find most recent support for the low
                 for i in range(6, self.prev_low_range):
@@ -209,7 +213,9 @@ class ReverseTC1(bt.Strategy):
                     window_low2 = self.data.low.get(size=i + 10, ago=-1)
                     if self.data.low[-i] == min(window_low):
                         self.trend_low = self.data.low[-i]
-                        self.prev_rsi = self.rsi[-i]
+                        # if max(self.rsi.get(size=12)) > 72:
+                            #for j in range(8, round(i*1.8)):
+                                #if max(self.rsi.get(size=4)) < self.rsi[-j] and self.data.high[0] > self.data.high[-j]: # RSI Divergence
                         # if not (self.rsi > self.prev_rsi > 70):
                         if self.min_size < (self.trend_high - self.trend_low) / self.trend_low < self.max_size:
                             self.EP = (self.trend_high - self.trend_low) * self.params.EPrice + self.trend_low
@@ -217,14 +223,14 @@ class ReverseTC1(bt.Strategy):
                             self.TP = (self.trend_high - self.trend_low) * self.params.TPPrice + self.trend_low
 
                             for fvg in self.FVGs:
-                                if self.TP > fvg[3]:
+                                if self.TP > fvg[3] and self.EP < self.ema600:
                                     #print(f"E: {self.EP}, TP: {self.TP}, SL: {self.SL}, High: {self.trend_high}, Low: {self.trend_low}")
                                     self.Entry_size = 25/(self.EP-self.SL)
                                     self.Entry = self.sell(exectype=bt.Order.StopLimit, price=self.EP, size=self.Entry_size)
                                     self.dir = 1
                                     return
             # LONG
-            elif self.data.low[0] == self.rolling_low:
+            elif self.data.low[0] == self.rolling_low and (self.data.high[0] - min([self.data.close[0], self.data.open[0]])) < min([self.data.close[0], self.data.open[0]]) - self.data.low[0]: # Hammer Candle
                 self.trend_low = self.data.low[0]
                 # Find most recent support for the low
                 for i in range(6, self.prev_low_range):
@@ -232,7 +238,9 @@ class ReverseTC1(bt.Strategy):
                     window_high2 = self.data.high.get(size=i+10, ago=-1)
                     if self.data.high[-i] == max(window_high):
                         self.trend_high = self.data.high[-i]
-                        self.prev_rsi = self.rsi[-i]
+                        # if min(self.rsi.get(size=12)) < 28:
+                            # for j in range(8, round(i*1.8)):
+                                # if min(self.rsi.get(size=4)) > self.rsi[-j] and self.data.low[0] < self.data.low[-j]: # RSI Divergence
                         # if not (self.rsi < self.prev_rsi < 70):
                         if self.min_size < (self.trend_high - self.trend_low) / self.trend_high < self.max_size:
                             self.EP = (self.trend_low-self.trend_high) * self.params.EPrice + self.trend_high
@@ -240,7 +248,7 @@ class ReverseTC1(bt.Strategy):
                             self.TP = (self.trend_low - self.trend_high) * self.params.TPPrice + self.trend_high
 
                             for fvg in self.FVGs:
-                                if self.TP < fvg[3]:
+                                if self.TP < fvg[3] and self.EP > self.ema600:
                                     # print(f"E: {self.EP}, TP: {self.TP}, SL: {self.SL}, High: {self.trend_high}, Low: {self.trend_low}")
                                     self.Entry_size = 25/(self.SL-self.EP)
                                     self.Entry = self.buy(exectype=bt.Order.StopLimit, price=self.EP, size=self.Entry_size)
@@ -251,17 +259,21 @@ class ReverseTC1(bt.Strategy):
     def stop(self):
         win_percentage = (self.winning_trades / self.total_trades) * 100 if self.total_trades > 0 else 0
         RR = abs(self.params.EPrice-self.params.TPPrice)/abs(self.params.EPrice-self.params.SLPrice)
+        expecteded_win_percentage = 1/(1+RR) * 100 if self.total_trades > 0 else 0
         print(f'Total Trades: {self.total_trades}')
         print(f'Winning Trades: {self.winning_trades}')
+        print(f'Expected Winning Percentage: {expecteded_win_percentage:.2f}%')
         print(f'Winning Percentage: {win_percentage:.2f}%')
-        profit = self.winning_trades * 50 * RR - (self.total_trades-self.winning_trades) * 50
+        edge = win_percentage - expecteded_win_percentage
+        print(f'Edge on Market: {edge:.2f}%')
+        profit = self.winning_trades * 25 * RR - (self.total_trades-self.winning_trades) * 25
         print(f'Profit: ${profit}')
-        with open('TC1_strategy_results.csv', mode='a', newline='') as file:
+        with open('tempReverseTC1_strategy_results.csv', mode='a', newline='') as file:
             writer = csv.writer(file)
             writer.writerow([self.params.data_name, self.params.min_size_param, self.params.max_size_param, self.params.prev_low_range_param,
                              self.params.low_candles_param, self.params.FVG_days_param,
                              self.params.EPrice, self.params.TPPrice, self.params.SLPrice, self.total_trades, self.winning_trades,
-                             win_percentage, profit])
+                             expecteded_win_percentage, win_percentage, edge, profit])
 
 # Check for RSI Divergence
 
@@ -276,9 +288,8 @@ if __name__ == '__main__':
     # Call cerebro to run the backtest
     cerebro = bt.Cerebro()
     # List of all the files
-    # data_files = ['data_5min/dot_usd_5min_data4.csv', 'data_5min/link_usd_5min_data4.csv', 'data_5min/ada_usd_5min_data4.csv', 'data_5min/atom_usd_5min_data4.csv',
-    #               'data_5min/sol_usd_5min_data4.csv', 'data_5min/xrp_usd_5min_data4.csv', 'data_5min/matic_usd_5min_data4.csv', 'data_5min/apt_usd_5min_data2.csv']
-    data_files = ['data_5min/apt_usd_5min_data2.csv']
+    data_files = ['data_5min/dot_usd_5min_data4.csv', 'data_5min/link_usd_5min_data4.csv', 'data_5min/ada_usd_5min_data4.csv', 'data_5min/atom_usd_5min_data4.csv',
+                'data_5min/sol_usd_5min_data4.csv', 'data_5min/xrp_usd_5min_data4.csv', 'data_5min/matic_usd_5min_data4.csv', 'data_5min/apt_usd_5min_data2.csv']
 
     for data_file in data_files:
         data = btfeeds.GenericCSVData(
@@ -299,11 +310,11 @@ if __name__ == '__main__':
         # Choose the parameters
         cerebro.optstrategy(
             ReverseTC1,
-            min_size_param=[0.015, 0.025, 0.035],
-            max_size_param=[0.065],
-            prev_low_range_param=[81],
+            min_size_param=[0.015, 0.025],
+            max_size_param=[0.06],
+            prev_low_range_param=[50],
             low_candles_param=[8],
-            FVG_days_param=[3],
+            FVG_days_param=[0.5,1,3],
             EPrice=[0.5, 0.382],
             TPPrice=[0, -0.17, -0.272],
             SLPrice=[0.618, 0.768, 1],
@@ -316,11 +327,11 @@ if __name__ == '__main__':
         cerebro.broker.setcommission(commission=0.000)
         # cerebro.addsizer(bt.sizers.PercentSizer, percents=risk)
         cerebro.addanalyzer(bt.analyzers.AnnualReturn, _name="areturn")
-        results = cerebro.run(maxcpus=8)
+        results = cerebro.run(maxcpus=4)
         # cerebro.plot(style='candlestick', volume=False, grid=True, subplot=True)
     # print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
     # print(results[0].analyzers.areturn.get_analysis())
-    filename = 'TC1_strategy_results2.csv'
+    filename = 'ReverseTC1_strategy_results.csv'
     data = load_csv_to_list(filename)
 
     # Sort data by the last element (win percentage)
