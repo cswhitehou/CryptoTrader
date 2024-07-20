@@ -7,8 +7,8 @@ import ccxt
 import datetime as dt
 from collections import deque
 
-api_key = '55d0904d-6270-475d-98a1-c99b0d9413da'
-secret = 'KUPMfNVJxjA_A-IIDiGmG5c8RECraTiLfjijsqS2FJQ3MjUzMzNlNy04OWRmLTRmMGQtOWZhMS1kNTUwYzQzZjJkOWE'
+api_key =
+secret =
 exchange = ccxt.phemex({
     'apiKey': api_key,
     'secret': secret,
@@ -23,7 +23,7 @@ def place_orders(prices, size, type, symbol):
     else:
         multi = 1.0001
     try:
-        order = exchange.create_order(symbol, 'market', side=type, amount=size, price=None, params={
+        order = exchange.create_order(symbol, 'limit', side=type, amount=size, price=prices[0], params={
             'stopLoss': {
                 'triggerPrice': prices[2],
                 'type': 'market',
@@ -44,13 +44,14 @@ def place_orders(prices, size, type, symbol):
         return None
 
 
-def check_for_trades(symbol, df, risk, ready_for_trade):
+def check_for_trades(symbol, df, risk, ready_for_trade, trend, type):
     if ready_for_trade == 1:
         if df['rsi'].iloc[-1] > 80 + 0:
             ready_for_trade = 3
     elif ready_for_trade == 2:
         if df['rsi'].iloc[-1] < 20 - 0:
             ready_for_trade = 4
+    # SHORT
     elif ready_for_trade == 3:
         if 0 < df['MACDh_98_99_30'].iloc[-1] < df['MACDh_98_99_30'].iloc[-2] and df['rsi'].iloc[-1] < 80:
             if df['MACDh_98_99_30'].iloc[-2] < df['MACDh_98_99_30'].iloc[-3]:
@@ -58,14 +59,17 @@ def check_for_trades(symbol, df, risk, ready_for_trade):
             else:
                 SL = df['rolling_high'].iloc[-1] * (1 + 0.005)
                 ob = exchange.fetch_order_book(symbol)
-                EP = float(ob['asks'][0][0])
+                EP = float(ob['asks'][1][0])
                 if abs(SL - EP) / EP < 0.001:
                     ready_for_trade = 0
                 else:
-                    TP = (EP - SL) * 2.5 + EP
+                    TP = (EP - SL) * 2.6 + EP
                     Entry_size = risk / (SL - EP)
-                    place_orders([EP, TP, SL], Entry_size, 'sell', symbol)
-                    ready_for_trade = 0
+                    trend = (EP - SL) + EP
+                    type = 'sell'
+                    place_orders([EP, TP, SL], Entry_size, type, symbol)
+                    ready_for_trade = 5
+    # LONG
     elif ready_for_trade == 4:
         if 0 > df['MACDh_98_99_30'].iloc[-1] > df['MACDh_98_99_30'].iloc[-2] and df['rsi'].iloc[-1] > 20:
             if df['MACDh_98_99_30'].iloc[-2] > df['MACDh_98_99_30'].iloc[-3]:
@@ -73,20 +77,22 @@ def check_for_trades(symbol, df, risk, ready_for_trade):
             else:
                 SL = df['rolling_low'].iloc[-1] * (1 - 0.005)
                 ob = exchange.fetch_order_book(symbol)
-                EP = float(ob['bids'][0][0])
+                EP = float(ob['bids'][1][0])
                 if abs(SL - EP) / SL < 0.001:
                     ready_for_trade = 0
                 else:
-                    TP = (EP - SL) * 2.5 + EP
+                    TP = (EP - SL) * 2.6 + EP
                     Entry_size = risk / (EP - SL)
-                    place_orders([EP, TP, SL], Entry_size, 'buy', symbol)
-                    ready_for_trade = 0
+                    trend = (EP - SL) + EP
+                    type = 'buy'
+                    place_orders([EP, TP, SL], Entry_size, type, symbol)
+                    ready_for_trade = 5
     if ready_for_trade < 3:
         if df['high'].iloc[-1] >= df['BBU_20_2.0'].iloc[-1]:
             ready_for_trade = 1
         elif df['low'].iloc[-1] <= df['BBL_20_2.0'].iloc[-1]:
             ready_for_trade = 2
-    return ready_for_trade
+    return ready_for_trade, trend, type
 
 
 def reset_orders(symbol):
@@ -120,7 +126,7 @@ def end_trade(symbol, prev_size, accountSize):
     else:
         win = 'LOSS'
     with open('X1_log.txt', 'a') as file:
-        file.write(f'{date}   {symbol}   {win}  PnL: ${profit}\n')
+        file.write(f'{date}   {symbol}   {win}  PnL: ${profit:.2f} Account: ${accountSize:.2f}\n')
     return check_past_data(symbol)
 
 def add_EMAs(df):
@@ -140,8 +146,19 @@ def add_EMAs(df):
     df['rolling_low'] = df['close'].rolling(window=14).min()
     return df
 
-def check_for_entry(orders, all_orders, EP, L1, Entry_size, type, symbol):
-    pass
+def check_for_new_high(symbol, df, type, trend):
+    if type == 'buy':
+        if df.high.iloc[-1] > trend:
+            print("New High")
+            reset_orders(symbol)
+            return 0
+    if type == 'sell':
+        if df.low.iloc[-1] < trend:
+            print("New Low")
+            reset_orders(symbol)
+            return 0
+    return 5
+
 
 def check_past_data(symbol):
     data = fetch_historical_data(symbol)
@@ -150,10 +167,10 @@ def check_past_data(symbol):
     for i in range(-15, -2):
         df = data[:(1000 + i)].copy()
         if ready_for_trade == 1:
-            if df['rsi'].iloc[-1] > 80 + 3:
+            if df['rsi'].iloc[-1] > 80:
                 ready_for_trade = 3
         elif ready_for_trade == 2:
-            if df['rsi'].iloc[-1] < 20 - 3:
+            if df['rsi'].iloc[-1] < 20:
                 ready_for_trade = 4
         elif ready_for_trade == 3:
             if 0 < df['MACDh_98_99_30'].iloc[-1] < df['MACDh_98_99_30'].iloc[-2] and df['rsi'].iloc[-1] < 80:
@@ -172,13 +189,14 @@ def check_past_data(symbol):
 # Check if there are orders/positions on startup
 def main():
     # Replace with your API keys
-    api_key = '55d0904d-6270-475d-98a1-c99b0d9413da'
-    secret = 'KUPMfNVJxjA_A-IIDiGmG5c8RECraTiLfjijsqS2FJQ3MjUzMzNlNy04OWRmLTRmMGQtOWZhMS1kNTUwYzQzZjJkOWE'
+    api_key =
+    secret =
     exchange = ccxt.phemex({
         'apiKey': api_key,
         'secret': secret,
         'options': {'defaultType': 'swap'}
     })
+    trend = 0
     # symbols = ['SOL/USDT:USDT', 'MATIC/USDT:USDT', 'APT/USDT:USDT']
     # symbols_queue = deque(symbols)
     symbol = 'SOL/USDT:USDT'
@@ -211,14 +229,17 @@ def main():
         accountSize = float(bal['info']['data']['account']['accountBalanceRv'])
         pos_size = exchange.fetch_positions([symbol])[0]['info']['size']
         if pos_size == '0':
+            if ready_for_trade == 5:
+                ready_for_trade = check_for_new_high(symbol, df, type, trend)
             if in_position:
                 ready_for_trade = end_trade(symbol, prev_size, accountSize)
                 in_position = False
             else:
-                ready_for_trade = check_for_trades(symbol, df, risk_amount, ready_for_trade)
+                ready_for_trade, trend, type = check_for_trades(symbol, df, risk_amount, ready_for_trade, trend, type)
                 prev_size = accountSize
         else:
             in_position = True
+            ready_for_trade = 0
         #if ready_for_trade == 0:
             #symbols_queue.appendleft(symbol)
         #else:
