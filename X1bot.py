@@ -1,3 +1,7 @@
+# Colby Whitehouse
+# 7/23/2024
+# This is a python bot that uses an algorithm to trade cryptocurrencies on phemex
+
 # Import everything
 import time
 import threading
@@ -7,6 +11,9 @@ import ccxt
 import datetime as dt
 from collections import deque
 import logging
+import smtplib
+from email.mime.text import MIMEText
+import atexit
 
 api_key = ''
 secret = ''
@@ -21,13 +28,44 @@ symbols_queue = deque(symbols)
 logging.basicConfig(filename='trading_bot.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
+# This function sends an SMS message by email to the phone number that is used as the input
+def send_sms_via_email(phone_number, carrier_gateway, message):
+    # Your email credentials
+    email = ""
+    password = ""
+
+    # Setup the MIME
+    msg = MIMEText(message)
+    msg['From'] = email
+    msg['To'] = f"{phone_number}@{carrier_gateway}"
+    msg['Subject'] = "Trade Notification"
+
+    # Sending the email
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(email, password)
+            server.sendmail(email, f"{phone_number}@{carrier_gateway}", msg.as_string())
+        print("SMS sent successfully!")
+    except Exception as e:
+        print(f"Failed to send SMS: {e}")
+
+# This is called to reset orders if the program fails and has to exit
+def on_exit():
+    send_sms_via_email("", "", 'Phemex Bot Stopped')
+    for symbol in symbols:
+        reset_orders(symbol)
+
+# Places orders if the conditions are met to enter a trade
 def place_orders(prices, size, type, symbol):
 
     try:
         order = exchange.create_limit_order(symbol, side=type, amount=size, price=prices[0])
         date = dt.datetime.now()
         with open('X1_log.txt', 'a') as file:
-            file.write(f'{date}   {symbol}   EP: {prices[0]} SL: {prices[2]} TP: {prices[1]} Type: {type} Size: {size}\n')
+            message = f'{date}   {symbol}   EP: {prices[0]} SL: {prices[2]} TP: {prices[1]} Type: {type} Size: {size}\n'
+            file.write(message)
+        send_sms_via_email("", "", message)
         if type == 'buy':
             multi = 0.9999
             new_type = 'sell'
@@ -52,7 +90,7 @@ def place_orders(prices, size, type, symbol):
         reset_orders(symbol)
         return None
 
-
+# This is the main logic which checks if a trade should be entered
 def check_for_trades(symbol, df, risk, ready_for_trade, trend, type):
     if ready_for_trade == 1:
         if df['rsi'].iloc[-1] > 80 + 0:
@@ -103,7 +141,7 @@ def check_for_trades(symbol, df, risk, ready_for_trade, trend, type):
             ready_for_trade = 2
     return ready_for_trade, trend, type
 
-
+# This function resets the orders and takes us out of the position
 def reset_orders(symbol):
     pos_size = exchange.fetch_positions([symbol])[0]['info']['size']
     pos_side = exchange.fetch_positions([symbol])[0]['info']['side']
@@ -117,31 +155,34 @@ def reset_orders(symbol):
     exchange.cancel_all_orders(symbol)
     exchange.cancel_all_orders(symbol=symbol, params={'untriggered': True})
     logging.info(f"Orders Canceled for {symbol}")
-    return None
+    return
 
-
+# This function gets the candle data from phemex
 def fetch_historical_data(symbol):
     data = exchange.fetch_ohlcv(symbol=symbol, timeframe='1m', limit=1000)
     df = pd.DataFrame(data, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
     df['datetime'] = pd.to_datetime(df['datetime'], unit='ms')
     return df
 
-
+# This function is called after a trade is complete to log the trade data in a csv
 def end_trade(symbol, prev_size, accountSize, type):
     if type == 'buy':
-        dir = 'L'
+        dir = 'LONG'
     else:
-        dir = 'S'
+        dir = 'SHORT'
     profit = accountSize-prev_size
     date = dt.datetime.now()
     if profit > 0:
-        win = 'W'
+        win = 'WIN'
     else:
-        win = 'L'
+        win = 'LOSS'
     with open('X1_results.csv', 'a') as file:
-        file.write(f'{date},{symbol},{win},{dir},${profit:.2f},${accountSize:.2f}\n')
+        message = f'{date},{symbol},{win},{dir},${profit:.2f},${accountSize:.2f}\n'
+        file.write(message)
+    send_sms_via_email("", "", message)
     return check_past_data(symbol)
 
+# This function adds the other indicators to the data
 def add_EMAs(df):
     df['ohlc4'] = (df['open']+df['high']+df['low']+df['close'])/4
     df['rsi'] = ta.rsi(df['close'], length=14)
@@ -159,6 +200,7 @@ def add_EMAs(df):
     df['rolling_low'] = df['close'].rolling(window=14).min()
     return df
 
+# This checks if the price misses entry and creates a new high/low
 def check_for_new_high(symbol, df, type, trend):
     if type == 'buy':
         if df.high.iloc[-1] > trend:
@@ -172,7 +214,7 @@ def check_for_new_high(symbol, df, type, trend):
             return 0
     return 5
 
-
+# This checks for trades for the past 15 mins and is called when the program starts up or after a trade is completed
 def check_past_data(symbol):
     data = fetch_historical_data(symbol)
     data = add_EMAs(data)
@@ -198,10 +240,7 @@ def check_past_data(symbol):
                 ready_for_trade = 2
     return ready_for_trade
 
-# Combine into one program
-# Confirm limit orders are placed correctly and logic is correct
-# Record trades better DATE SYMBOL WIN? DIRECTION PnL ACCOUNTSIZE
-# Check for trades only during weekdays
+# The main logic for the trading bot which uses a while loop inside of try/except logic
 def trade_symbol(symbol):
     # Replace with your API keys
     api_key = ''
@@ -213,9 +252,10 @@ def trade_symbol(symbol):
     })
     trend = 0
     logging.info(f'Starting trading for {symbol}')
-    risk_amount = 2
+    risk_amount = 10
     prev_size = 0
     type = 'buy'
+    in_position = False
     exchange.set_position_mode(hedged=False, symbol=symbol)
     exchange.set_leverage(20, symbol)
     ready_for_trade = check_past_data(symbol)
@@ -231,11 +271,15 @@ def trade_symbol(symbol):
             # pos_size = exchange.fetch_positions([symbol])[0]['info']['size']
             orders = exchange.fetch_open_orders(symbol)
             if len(orders) == 2:
+                if in_position == False:
+                    send_sms_via_email("", "", f'Limit order filled for {symbol}')
+                in_position = True
                 ready_for_trade = 0
             else:
                 if len(orders) == 3:
                     ready_for_trade = check_for_new_high(symbol, df, type, trend)
                 elif len(orders) == 1:
+                    in_position = False
                     reset_orders(symbol)
                     ready_for_trade = end_trade(symbol, prev_size, accountSize, type)
                 else:
@@ -247,7 +291,10 @@ def trade_symbol(symbol):
         print(ready_for_trade)
         time.sleep(5)
 
+# MAIN function that creates the threads so each token can be traded in parallel
 if __name__ == '__main__':
+    atexit.register(on_exit)
+    send_sms_via_email("", "", 'Phemex Bot Running')
     threads = []
     for symbol in symbols:
         t = threading.Thread(target=trade_symbol, args=(symbol,))
