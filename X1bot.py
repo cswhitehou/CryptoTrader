@@ -1,46 +1,55 @@
 # Import everything
 import time
-from loadAPI import getSubKey
+import threading
 import pandas as pd
 import pandas_ta as ta
 import ccxt
 import datetime as dt
 from collections import deque
+import logging
 
-api_key =
-secret =
+api_key = ''
+secret = ''
 exchange = ccxt.phemex({
     'apiKey': api_key,
     'secret': secret,
     'options': {'defaultType': 'swap'}
 })
-symbols = ['SOL/USDT:USDT', 'MATIC/USDT:USDT', 'APT/USDT:USDT']
+symbols = ['SOL/USDT:USDT', 'MATIC/USDT:USDT', 'DOT/USDT:USDT']
 symbols_queue = deque(symbols)
 
+logging.basicConfig(filename='trading_bot.log', level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
 def place_orders(prices, size, type, symbol):
-    if type == 'buy':
-        multi = 0.9999
-    else:
-        multi = 1.0001
+
     try:
-        order = exchange.create_order(symbol, 'limit', side=type, amount=size, price=prices[0], params={
-            'stopLoss': {
-                'triggerPrice': prices[2],
-                'type': 'market',
-            },
-            'takeProfit': {
-                'triggerPrice': prices[1] * multi,
-                'type': 'limit',
-                'price': prices[1],
-            },
-        })
-        print(f"Market order placed: {order['id']}")
+        order = exchange.create_limit_order(symbol, side=type, amount=size, price=prices[0])
         date = dt.datetime.now()
         with open('X1_log.txt', 'a') as file:
             file.write(f'{date}   {symbol}   EP: {prices[0]} SL: {prices[2]} TP: {prices[1]} Type: {type} Size: {size}\n')
+        if type == 'buy':
+            multi = 0.9999
+            new_type = 'sell'
+        else:
+            multi = 1.0001
+            new_type = 'buy'
+        tp_params = {
+            'ordType': 'LimitIfTouched',
+            'triggerType': 'ByLastPrice',
+            'stopPxRp': prices[1] * multi
+        }
+        exchange.create_order(symbol, 'limit', new_type, size, prices[1], params=tp_params)
+        sl_params = {
+            'ordType': 'Stop',
+            'triggerType': 'ByLastPrice',
+            'stopPxRp': prices[2]
+        }
+        exchange.create_order(symbol, 'market', new_type, size, prices[2], params=sl_params)
         return order
     except ccxt.BaseError as e:
-        print(f"An error occurred: {str(e)}")
+        logging.error(f"An error occurred: {str(e)}")
+        reset_orders(symbol)
         return None
 
 
@@ -107,7 +116,7 @@ def reset_orders(symbol):
             exchange.create_order(symbol, 'market', 'sell', pos_size, params={'reduceOnly': True})
     exchange.cancel_all_orders(symbol)
     exchange.cancel_all_orders(symbol=symbol, params={'untriggered': True})
-    print("Orders Canceled")
+    logging.info(f"Orders Canceled for {symbol}")
     return None
 
 
@@ -118,15 +127,19 @@ def fetch_historical_data(symbol):
     return df
 
 
-def end_trade(symbol, prev_size, accountSize):
+def end_trade(symbol, prev_size, accountSize, type):
+    if type == 'buy':
+        dir = 'L'
+    else:
+        dir = 'S'
     profit = accountSize-prev_size
     date = dt.datetime.now()
     if profit > 0:
-        win = 'WIN'
+        win = 'W'
     else:
-        win = 'LOSS'
-    with open('X1_log.txt', 'a') as file:
-        file.write(f'{date}   {symbol}   {win}  PnL: ${profit:.2f} Account: ${accountSize:.2f}\n')
+        win = 'L'
+    with open('X1_results.csv', 'a') as file:
+        file.write(f'{date},{symbol},{win},{dir},${profit:.2f},${accountSize:.2f}\n')
     return check_past_data(symbol)
 
 def add_EMAs(df):
@@ -149,12 +162,12 @@ def add_EMAs(df):
 def check_for_new_high(symbol, df, type, trend):
     if type == 'buy':
         if df.high.iloc[-1] > trend:
-            print("New High")
+            logging.info("New High detected, resetting orders")
             reset_orders(symbol)
             return 0
     if type == 'sell':
         if df.low.iloc[-1] < trend:
-            print("New Low")
+            logging.info("New Low detected, resetting orders")
             reset_orders(symbol)
             return 0
     return 5
@@ -185,74 +198,61 @@ def check_past_data(symbol):
                 ready_for_trade = 2
     return ready_for_trade
 
-# Error Handling
-# Check if there are orders/positions on startup
-def main():
+# Combine into one program
+# Confirm limit orders are placed correctly and logic is correct
+# Record trades better DATE SYMBOL WIN? DIRECTION PnL ACCOUNTSIZE
+# Check for trades only during weekdays
+def trade_symbol(symbol):
     # Replace with your API keys
-    api_key =
-    secret =
+    api_key = ''
+    secret = ''
     exchange = ccxt.phemex({
         'apiKey': api_key,
         'secret': secret,
         'options': {'defaultType': 'swap'}
     })
     trend = 0
-    # symbols = ['SOL/USDT:USDT', 'MATIC/USDT:USDT', 'APT/USDT:USDT']
-    # symbols_queue = deque(symbols)
-    symbol = 'SOL/USDT:USDT'
-    compound = False
-    Entry = None
-    in_position = False
-    prices = []
-    stored_sizes = []
-    Entry_size = 0
-    TP = 0
-    SL = 0
-    EP = 0
+    logging.info(f'Starting trading for {symbol}')
     risk_amount = 2
-    ready_for_trade = 0
     prev_size = 0
     type = 'buy'
-    #for symbol in symbols:
     exchange.set_position_mode(hedged=False, symbol=symbol)
     exchange.set_leverage(20, symbol)
     ready_for_trade = check_past_data(symbol)
-        # reset_orders(symbol)
     while True:
-        # symbol = symbols_queue.pop()
-        df = fetch_historical_data(symbol)
-        df = add_EMAs(df)
-        current_time = dt.datetime.now().time()
-        print(symbol)
-        print(current_time)
-        bal = exchange.fetch_balance()
-        accountSize = float(bal['info']['data']['account']['accountBalanceRv'])
-        pos_size = exchange.fetch_positions([symbol])[0]['info']['size']
-        if pos_size == '0':
-            if ready_for_trade == 5:
-                ready_for_trade = check_for_new_high(symbol, df, type, trend)
-            if in_position:
-                ready_for_trade = end_trade(symbol, prev_size, accountSize)
-                in_position = False
+        try:
+            df = fetch_historical_data(symbol)
+            df = add_EMAs(df)
+            current_time = dt.datetime.now().time()
+            print(symbol)
+            print(current_time)
+            bal = exchange.fetch_balance()
+            accountSize = float(bal['info']['data']['account']['accountBalanceRv'])
+            # pos_size = exchange.fetch_positions([symbol])[0]['info']['size']
+            orders = exchange.fetch_open_orders(symbol)
+            if len(orders) == 2:
+                ready_for_trade = 0
             else:
-                ready_for_trade, trend, type = check_for_trades(symbol, df, risk_amount, ready_for_trade, trend, type)
-                prev_size = accountSize
-        else:
-            in_position = True
-            ready_for_trade = 0
-        #if ready_for_trade == 0:
-            #symbols_queue.appendleft(symbol)
-        #else:
-            #symbols_queue.append(symbol)
+                if len(orders) == 3:
+                    ready_for_trade = check_for_new_high(symbol, df, type, trend)
+                elif len(orders) == 1:
+                    reset_orders(symbol)
+                    ready_for_trade = end_trade(symbol, prev_size, accountSize, type)
+                else:
+                    ready_for_trade, trend, type = check_for_trades(symbol, df, risk_amount, ready_for_trade, trend, type)
+                    prev_size = accountSize
+        except Exception as e:
+            logging.error(f"Unexpected error in trade loop for {symbol}: {str(e)}")
+            time.sleep(30)
         print(ready_for_trade)
-        print(symbols_queue)
-        print("waiting 5 seconds")
         time.sleep(5)
 
 if __name__ == '__main__':
-    while True:
-        try:
-            main()
-        except Exception as e:
-            print(e)
-            time.sleep(30)
+    threads = []
+    for symbol in symbols:
+        t = threading.Thread(target=trade_symbol, args=(symbol,))
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
