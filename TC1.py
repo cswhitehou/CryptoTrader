@@ -229,11 +229,15 @@ class TC1(bt.Strategy):
                         self.trend_high = self.data.high[0]
                         self.cancel_all_orders()
                         self.clear_order_references()
+                    # elif self.data.low[0] < self.TC2:
+                        # self.other_entry = self.buy(exectype=bt.Order.Stop, price=self.trend_high, size=self.Entry_size)
                 elif self.dir == 0:
                     if self.data.low[0] < self.trend_low:
                         self.trend_low = self.data.low[0]
                         self.cancel_all_orders()
                         self.clear_order_references()
+                    # elif self.data.high[0] < self.TC2:
+                        # self.other_entry = self.sell(exectype=bt.Order.Stop, price=self.trend_low, size=self.Entry_size)
             # LONG
             elif (self.ema20 > self.ema50 > self.ema200 or self.ema_check) and self.data.high[0] == self.rolling_high:
                 self.trend_high = self.data.high[0]
@@ -248,6 +252,7 @@ class TC1(bt.Strategy):
                         if self.min_size < (self.trend_high - self.trend_low) / self.trend_low < self.max_size:
                             self.EP = (self.trend_high - self.trend_low) * 0.382 + self.trend_low
                             self.SL = (self.trend_high - self.trend_low) * self.params.SLPrice + self.trend_low
+                            self.TC2 = (self.trend_high - self.trend_low) * 0.682 + self.trend_low
                             self.TP = (self.trend_high - self.trend_low) * 1.272 + self.trend_low
                             self.sr_count = 0
                             for j in range(3, i):
@@ -282,6 +287,7 @@ class TC1(bt.Strategy):
                         if self.min_size < (self.trend_high - self.trend_low) / self.trend_high < self.max_size:
                             self.EP = (self.trend_low-self.trend_high) * 0.382 + self.trend_high
                             self.SL = (self.trend_low - self.trend_high) * self.params.SLPrice + self.trend_high
+                            self.TC2 = (self.trend_low - self.trend_high) * 0.618 + self.trend_high
                             self.TP = (self.trend_low - self.trend_high) * 1.272 + self.trend_high
                             self.sr_count = 0
                             for j in range(3, i):

@@ -45,12 +45,12 @@ def find_fair_value_gaps(df):
 class TCLMax(bt.Strategy):
     params = (
         ('ema_check_param', False),
-        ('rolling_period', 48),
-        ('too_steep', 0.06),
-        ('steep_candles', 20),
+        ('rolling_period', 36),
+        ('too_steep', 0.055),
+        ('steep_candles', 16),
         ('min_range', 0.04),
-        ('max_range', 0.11),
-        ('established_low', 54),
+        ('max_range', 0.09),
+        ('established_low', 40),
         ('data_name', ''),
     )
     # __init__ initializes all the variables to be used in the strategy when the strategy is loaded
@@ -63,8 +63,8 @@ class TCLMax(bt.Strategy):
         self.ema15m = bt.ind.EMA(period=600)
         self.ema1hr = bt.ind.EMA(period=2400)
         # Define S/R
-        self.rolling_high = bt.indicators.Highest(self.data.high, period=12*self.params.rolling_period)
-        self.rolling_low = bt.indicators.Lowest(self.data.low, period=12*self.params.rolling_period)
+        self.rolling_high = bt.indicators.Highest(self.data.open, period=12*self.params.rolling_period)
+        self.rolling_low = bt.indicators.Lowest(self.data.high, period=12*self.params.rolling_period)
         # High, Low, Range, Fib Levels: 1, 0, 0.618, 1.272, 0.382, 0.17, -0.05
         self.trend_low = 0
         self.trend_high = 0
@@ -116,9 +116,6 @@ class TCLMax(bt.Strategy):
             # Clear and reset orders
             self.accountSize += trade.pnl
             # print(self.accountSize)
-            self.total_trades += 1
-            if trade.pnl > 0:
-                self.winning_trades += 1
             self.cancel_all_orders()
             self.StopLoss = None
             self.TakeProfit = None
@@ -142,12 +139,6 @@ class TCLMax(bt.Strategy):
     # notify_order is triggered whenever a change to an order has been made
     def notify_order(self, order):
         # LONG
-        """if self.count > 440:
-            print(order)
-        if order.status in [order.Created, order.Accepted]:
-            if self.count == 443:
-                self.cancel(order)
-            self.count += 1"""
         if self.dir == 1:
             # Check if the order was completed
             if order.status in [order.Completed]:
@@ -155,10 +146,13 @@ class TCLMax(bt.Strategy):
                 if order == self.TakeProfit:
                     # print(f"TAKE PROFIT LONG order executed, Price: {order.executed.price}, Size: {order.executed.size}")
                     self.cancel_all_orders()
+                    self.winning_trades += 1
+                    self.total_trades += 1
                 elif order == self.StopLoss:
                     # print(f"STOP LOSS LONG order executed, Price: {order.executed.price}, Size: {order.executed.size}")
                     # print(self.SL)
                     self.SL_hit += 1
+                    self.total_trades += 1
                     # for orders in self.broker.get_orders_open():
                         # print(orders)
                     self.cancel_all_orders()
@@ -200,9 +194,12 @@ class TCLMax(bt.Strategy):
                 if order == self.TakeProfit:
                     # print(f"TAKE PROFIT SHORT order executed, Price: {order.executed.price}, Size: {order.executed.size}")
                     self.cancel_all_orders()
+                    self.total_trades += 1
+                    self.winning_trades += 1
                 elif order == self.StopLoss:
                     # print(f"STOP LOSS SHORT order executed, Price: {order.executed.price}, Size: {order.executed.size}")
                     self.SL_hit += 1
+                    self.total_trades += 1
                     # for orders in self.broker.get_orders_open():
                         # print(orders)
                     self.cancel_all_orders()
@@ -326,25 +323,25 @@ class TCLMax(bt.Strategy):
             # Make sure there has not been a sharp increase in price
             # Check for 1 hr FVGs
             # 1. 20, 50, 200 EMAs lined up
-            elif self.data.high[0] == self.rolling_high:
+            elif self.data.open[0] == self.rolling_high:
                 # 2. Price above 200 EMA on 5m, 15m, 1hr
-                if self.data.high[0] > self.ema15m and self.data.high[0] > self.ema1hr:
+                if self.data.open[0] > self.ema15m and self.data.open[0] > self.ema1hr:
                     # 3. New 48hr high
                     if self.ema20 > self.ema50 > self.ema200 or self.params.ema_check_param:
-                        self.trend_high = self.data.high[0]
+                        self.trend_high = self.data.open[0]
                         # 4. Established low 12-36hrs previous
                         for i in range(-432, -144):
-                            window_low = self.data.low.get(size=self.params.established_low * 2 + 1, ago=i+self.params.established_low)
-                            window_low2 = self.data.low.get(size=-i+10, ago=-1)
-                            if self.data.low[i] == min(window_low) and self.data.low[i] == min(window_low2):
+                            window_low = self.data.high.get(size=self.params.established_low * 2 + 1, ago=i+self.params.established_low)
+                            window_low2 = self.data.high.get(size=-i+10, ago=-1)
+                            if self.data.high[i] == min(window_low) and self.data.high[i] == min(window_low2):
                                 # 5. Range 4-7%
                                 self.too_steep = 0
                                 for j in range(-600, -self.params.steep_candles):
-                                    if (self.data.high[j + self.params.steep_candles] - self.data.low[j])/self.data.low[j] > self.params.too_steep:
+                                    if (self.data.open[j + self.params.steep_candles] - self.data.high[j])/self.data.high[j] > self.params.too_steep:
                                         self.too_steep = 1
                                 if self.too_steep == 0:
-                                    if self.params.min_range < (self.trend_high-self.data.low[i])/self.data.low[i] < self.params.max_range:
-                                        self.trend_low = self.data.low[i]
+                                    if self.params.min_range < (self.trend_high-self.data.high[i])/self.data.high[i] < self.params.max_range:
+                                        self.trend_low = self.data.high[i]
                                         self.EP = (self.trend_high-self.trend_low)*0.618+self.trend_low
                                         self.L1 = (self.trend_high-self.trend_low)*0.382+self.trend_low
                                         self.L2 = (self.trend_high-self.trend_low)*0.17+self.trend_low
@@ -373,25 +370,25 @@ class TCLMax(bt.Strategy):
                                         break
             # SHORT
             # 1. Check to see if the EMAs are aligned
-            elif self.data.low[0] == self.rolling_low:
+            elif self.data.high[0] == self.rolling_low:
                 # 2. Price below 200 EMA on 5m, 15m, 1hr
-                if self.data.low[0] < self.ema15m and self.data.low[0] < self.ema1hr:
+                if self.data.high[0] < self.ema15m and self.data.high[0] < self.ema1hr:
                     # 3. New 48hr low
                     if self.ema20 < self.ema50 < self.ema200 or self.params.ema_check_param:
-                        self.trend_low = self.data.low[0]
+                        self.trend_low = self.data.high[0]
                         # 4. Established high 12-36hrs previous
                         for i in range(-432, -144):
-                            window_high = self.data.high.get(size=self.params.established_low * 2 + 1, ago=i+self.params.established_low)
-                            window_high2 = self.data.high.get(size=-i+10, ago=-1)
-                            if self.data.high[i] == max(window_high) and self.data.high[i] == max(window_high2):
+                            window_high = self.data.open.get(size=self.params.established_low * 2 + 1, ago=i+self.params.established_low)
+                            window_high2 = self.data.open.get(size=-i+10, ago=-1)
+                            if self.data.open[i] == max(window_high) and self.data.open[i] == max(window_high2):
                                 # 5. Range 4-7%
                                 self.too_steep = 0
                                 for j in range(-600, -self.params.steep_candles):
-                                    if (self.data.high[j] - self.data.low[j+self.params.steep_candles])/self.data.high[j] > self.params.too_steep:
+                                    if (self.data.open[j] - self.data.high[j+self.params.steep_candles])/self.data.open[j] > self.params.too_steep:
                                         self.too_steep = 1
                                 if self.too_steep == 0:
-                                    if self.params.min_range < (self.data.high[i]-self.trend_low)/self.data.high[i] < self.params.max_range:
-                                        self.trend_high = self.data.high[i]
+                                    if self.params.min_range < (self.data.open[i]-self.trend_low)/self.data.open[i] < self.params.max_range:
+                                        self.trend_high = self.data.open[i]
                                         self.EP = (self.trend_low-self.trend_high)*0.618+self.trend_high
                                         self.L1 = (self.trend_low-self.trend_high)*0.382+self.trend_high
                                         self.L2 = (self.trend_low-self.trend_high)*0.17+self.trend_high
@@ -456,10 +453,9 @@ class TCLMax(bt.Strategy):
         L1_wins = self.L1_hit - self.L2_hit
         Entry_wins = self.total_trades - self.L1_hit
         final_value = self.broker.getvalue()
-        initial_value = 10000000  # Assuming initial cash is 10,000
-        profit = final_value - initial_value
+        profit = 250 * 1.1**Entry_wins * 1.1**L1_wins * 1.12**L2_wins * 0.5**Losing_trades - 250
         print(f"Entry wins: {Entry_wins}, L1 wins: {L1_wins}, L2 wins: {L2_wins}, Losses: {Losing_trades}, Profit: {profit}")
-        with open('new_TCLM_strategy_results.csv', mode='a', newline='') as file:
+        with open('hlocTCLM_strategy_results.csv', mode='a', newline='') as file:
             writer = csv.writer(file)
             writer.writerow([self.params.data_name, self.params.rolling_period,self.params.too_steep,self.params.steep_candles,self.params.min_range,self.params.max_range,
                             self.params.established_low,self.params.ema_check_param, self.total_trades, self.winning_trades, Losing_trades, L1_wins, L2_wins, Entry_wins,
@@ -503,8 +499,8 @@ if __name__ == '__main__':
     # print(df)
     # print(df15)
     # print(df1)
-    data_files = ['data_5min/dot_usd_5min_data2.csv', 'data_5min/matic_usd_5min_data2.csv', 'data_5min/link_usd_5min_data2.csv', 'data_5min/ada_usd_5min_data2.csv', 'data_5min/atom_usd_5min_data4.csv',
-                  'data_5min/sol_usd_5min_data2.csv', 'data_5min/xrp_usd_5min_data4.csv', 'data_5min/apt_usd_5min_data2.csv']
+    data_files = ['data_5min/matic_usd_5min_data4.csv', 'data_5min/dot_usd_5min_data4.csv', 'data_5min/link_usd_5min_data4.csv', 'data_5min/ada_usd_5min_data4.csv', 'data_5min/atom_usd_5min_data4.csv',
+                  'data_5min/sol_usd_5min_data4.csv', 'data_5min/xrp_usd_5min_data4.csv', 'data_5min/apt_usd_5min_data2.csv']
     cerebro = bt.Cerebro()
     # Load the data
     for data_file in data_files:
@@ -526,21 +522,23 @@ if __name__ == '__main__':
         cerebro.adddata(data)
         cerebro.optstrategy(
             TCLMax,
-            ema_check_param=[False],
-            rolling_period=[30, 36],
-            too_steep=[0.055],
-            steep_candles=[16],
-            min_range=[0.04],
-            max_range=[0.08, 0.09],
-            established_low=[40],
+            ema_check_param=[False, True],
+            rolling_period=[24, 36, 48],
+            too_steep=[0.05, 0.07],
+            steep_candles=[15],
+            min_range=[0.03, 0.04],
+            max_range=[0.06, 0.08, 0.1],
+            established_low=[30, 40, 52, 64],
             data_name=[data_file],
         )
+        # cerebro.addstrategy(TCLMax)
         cerebro.broker.setcash(cash)
         cerebro.broker.set_slippage_perc(0.005)
         cerebro.broker.setcommission(commission=0.0000)
         cerebro.addsizer(bt.sizers.PercentSizer, percents=risk)
         cerebro.addanalyzer(bt.analyzers.AnnualReturn, _name="areturn")
         teststrat = cerebro.run(maxcpus=8)
+        # cerebro.plot()
     # print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
     # print(teststrat[0].analyzers.areturn.get_analysis())
 

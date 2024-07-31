@@ -22,6 +22,7 @@ class X1(bt.Strategy):
         ('SL_max', 0.01),
         ('max_range', 0.5),
         ('ema_multi', 1),
+        ('entry_diff', 0.0001),
         ('bars', 100),
         ('rsi_period', 7),  # RSI period
         ('loss_streak', 2),  # Max Loss streak in a single direction before switching
@@ -144,10 +145,11 @@ class X1(bt.Strategy):
     # 3. RSI returns to normal range
     # 4. MACD histogram changes from dark to light color means ENTRY
     def next(self):
+        current_datetime = self.data.datetime.datetime(0)
         self.candles_count += 1
         if 10000 * self.params.min_num < self.candles_count < 10000 * self.params.max_num + self.params.min_num * 10000:
             if not self.position:
-                """if self.Entry:
+                if self.Entry:
                     if self.dir == 0:
                         if self.data.high[0] > (self.EP - self.SL) + self.EP:
                             self.cancel_all_orders()
@@ -155,7 +157,7 @@ class X1(bt.Strategy):
                     elif self.dir == 1:
                         if self.data.low[0] < (self.EP-self.SL) + self.EP:
                             self.cancel_all_orders()
-                            self.clear_order_references()"""
+                            self.clear_order_references()
                 # Check for RSI break IF BB has been pushed into
                 if self.ready_for_trade == 1:
                     if self.rsi > 80 + self.params.rsi_break:
@@ -181,7 +183,7 @@ class X1(bt.Strategy):
                         if self.macd.lines.histo[-1] < self.macd.lines.histo[-2]:
                             self.ready_for_trade = 0
                         else:
-                            self.EP = self.data.close[0]
+                            self.EP = self.data.close[0] * (1+self.params.entry_diff)
                             self.SL = min([self.rolling_high * (1 + self.params.SL_range), self.EP * (1+self.params.SL_max)])
                             if self.params.max_range < abs(self.SL - self.EP)/self.EP or abs(self.SL - self.EP)/self.EP < self.params.min_range:  # Check if the range is too small
                                 self.ready_for_trade = 0
@@ -193,7 +195,7 @@ class X1(bt.Strategy):
                                     self.TP = (self.EP-self.SL)*self.params.win_multi + self.EP
                                     self.ema_lineup = False
                                 self.Entry_size = 25/(self.SL-self.EP)
-                                self.Entry = self.sell(size=self.Entry_size, exectype=bt.Order.Market)
+                                self.Entry = self.sell(size=self.Entry_size, exectype=bt.Order.Limit, price=self.EP)
                                 self.StopLoss = self.buy(exectype=bt.Order.Stop, size=self.Entry_size, price=self.SL)
                                 self.TakeProfit = self.buy(exectype=bt.Order.Limit, size=self.Entry_size, price=self.TP)
                                 self.dir = 1
@@ -209,7 +211,7 @@ class X1(bt.Strategy):
                         if self.macd.lines.histo[-1] > self.macd.lines.histo[-2]:
                             self.ready_for_trade = 0
                         else:
-                            self.EP = self.data.close[0]
+                            self.EP = self.data.close[0] * (1+self.params.entry_diff)
                             self.SL = max([self.rolling_low * (1 - self.params.SL_range), self.EP*(1-self.params.SL_max)])
                             # print(f'EP: {self.EP}, SL: {self.SL}')
                             if self.params.max_range < abs(self.SL - self.EP)/self.SL or abs(self.SL - self.EP)/self.SL < self.params.min_range:  # Check if the range is too small
@@ -222,7 +224,7 @@ class X1(bt.Strategy):
                                     self.TP = (self.EP-self.SL)*self.params.win_multi + self.EP
                                     self.ema_lineup = False
                                 self.Entry_size = 25/(self.EP-self.SL)
-                                self.Entry = self.buy(size=self.Entry_size, exectype=bt.Order.Market)
+                                self.Entry = self.buy(size=self.Entry_size, exectype=bt.Order.Limit, price= self.EP)
                                 self.StopLoss = self.sell(exectype=bt.Order.Stop, size=self.Entry_size, price=self.SL)
                                 self.TakeProfit = self.sell(exectype=bt.Order.Limit, size=self.Entry_size, price=self.TP)
                                 self.dir = 0
@@ -242,6 +244,7 @@ class X1(bt.Strategy):
 
     # This function is called at the end of every strategy and records the parameters and results in a csv
     def stop(self):
+        self.days = round(self.candles_count / (60*24))
         win_percentage = (self.winning_trades / self.total_trades) * 100 if self.total_trades > 0 else 0
         print(f'Total Trades: {self.total_trades}')
         print(f'Winning Trades: {self.winning_trades}')
@@ -251,14 +254,14 @@ class X1(bt.Strategy):
         edge = win_percentage - expected_win_percentage
         print(f'Edge on Market: {edge:.2f}%')
         profit = self.winning_trades * 25 * self.params.win_multi - (self.total_trades-self.winning_trades) * 25 + self.lined_up_trades * 25 * (self.params.ema_multi-1)
+        profit_per_day = round(profit/self.days)
         print(f'Profit: ${profit}')
         with open('X1_strategy_results.csv', mode='a', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow([self.params.data_name, self.params.bollinger_period, self.params.bollinger_devfactor,
-                             self.params.macd1, self.params.macd2, self.params.macdsig, self.params.rsi_period,
-                             self.params.SL_max, self.params.max_range,
-                             self.params.SL_range, self.params.win_multi, self.params.rsi_break, self.params.rolling_range,
-                            self.total_trades, self.winning_trades, self.lined_up_trades, expected_win_percentage,
+            writer.writerow([self.params.data_name, self.params.rsi_period,
+                             # self.params.SL_max, self.params.max_range, self.params.entry_diff,self.params.SL_range,
+                             self.params.win_multi, self.params.rsi_break, self.params.rolling_range,
+                            self.total_trades, self.winning_trades, self.days, profit_per_day, expected_win_percentage,
                              win_percentage, edge, profit])
 
 
@@ -269,29 +272,45 @@ if __name__ == '__main__':
     cash = 10000000.0
     risk = 5
 
-    # Check for EMAs in line
+    # Check for EMAs in line after entry
+    # Check multiple limit orders
+    # Trail SL
+    # Multiple Take profits
+    # Only Long/Short
+
+
     # Call cerebro to run the backtest
     # List of all the files
-    """data_files = ['data_5min/apt_usd_1min_data2.csv', 'data_5min/matic_usd_1min_data.csv', 'data_5min/sol_usd_1min_data.csv',  'data_5min/ada_usd_1min_data.csv',  'data_5min/atom_usd_1min_data.csv',
+    data_files = ['data_5min/apt_usd_1min_data2.csv', 'data_5min/matic_usd_1min_data.csv', 'data_5min/sol_usd_1min_data.csv',  'data_5min/ada_usd_1min_data.csv',  'data_5min/atom_usd_1min_data.csv',
                  'data_5min/dot_usd_1min_data.csv', 'data_5min/link_usd_1min_data.csv',
-                 'data_5min/xrp_usd_1min_data.csv']"""
-    data_files = ['data_5min/matic_usd_1min_data4.csv',
-                  'data_5min/sol_usd_1min_data4.csv', 'data_5min/dot_usd_1min_data4.csv']
+                 'data_5min/xrp_usd_1min_data.csv']
+    """data_files = ['data_5min/matic_usd_1min_data3.csv',
+                  'data_5min/sol_usd_1min_data3.csv', 'data_5min/dot_usd_1min_data3.csv']"""
+    data_folder = 'data_1min'
 
-    for data_file in data_files:
-        data = btfeeds.GenericCSVData(
-            dataname=data_file,
-            nullvalue=0.0,
-            compression=1,
-            timeframe=bt.TimeFrame.Minutes,
-            datetime=0,
-            open=1,
-            high=2,
-            low=3,
-            close=4,
-            volume=5,
-            openinterest=-1
-        )
+    # List to hold all the data feeds
+    data_feeds = []
+
+    # Iterate over all files in the directory
+    for data_file in os.listdir(data_folder):
+        # Construct the full file path
+        file_path = os.path.join(data_folder, data_file)
+
+        # Ensure it's a file (and not a subdirectory or other)
+        if os.path.isfile(file_path):
+            data = btfeeds.GenericCSVData(
+                dataname=file_path,
+                nullvalue=0.0,
+                compression=1,
+                timeframe=bt.TimeFrame.Minutes,
+                datetime=0,
+                open=1,
+                high=2,
+                low=3,
+                close=4,
+                volume=5,
+                openinterest=-1
+            )
         cerebro = bt.Cerebro()
         cerebro.adddata(data)
         # Choose the parameters
@@ -302,7 +321,7 @@ if __name__ == '__main__':
             macd1=[98],
             macd2=[99],
             macdsig=[30],
-            rsi_period=[7],
+            rsi_period=[7, 14],
             min_num=[0],
             max_num=[100],
             SL_max=[1],
@@ -311,10 +330,11 @@ if __name__ == '__main__':
             bars=[100],
             max_range=[0.5],
             loss_streak=[100],
-            SL_range=[0.005],
-            win_multi=[2.5],
-            rsi_break=[0,3,5],
-            rolling_range=[14],
+            SL_range=[0.0005, 0.001, 0.005],
+            entry_diff=[0.0001],
+            win_multi=[1.5, 2.5],
+            rsi_break=[0, 3, 5],
+            rolling_range=[12, 20],
             data_name=[data_file],
         )
         # cerebro.addstrategy(X1)
