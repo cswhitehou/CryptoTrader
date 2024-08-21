@@ -1,0 +1,1 @@
+This is a series of programs that will fetch historical crypto data, backtest it, and trade it in live time. There is a large amount of data in the Github, but you need a VPN outside of the USA to fetch more data as it uses the Binance API.
